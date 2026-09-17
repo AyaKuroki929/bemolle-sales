@@ -173,11 +173,7 @@ function initSheets() {
      ['ラジショット','対象外',8,true],['体験','対象外',9,true],['フェイシャル','対象外',10,true]]
       .forEach(function (r) { menus.appendRow(r); });
   }
-  const staff = sh(SH_STAFF);
-  if (staff.getLastRow() <= 1) {
-    [['中田有加', true, 1, true], ['黒木彩', false, 2, true]]
-      .forEach(function (r) { staff.appendRow(r); });
-  }
+  // スタッフは画面の「設定」タブから登録する（氏名をコードに書かない）
   return { ok: true };
 }
 
