@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ベモーレ 売上日報</title>
+<style>
+:root{
+  --bg:#faf7f4; --card:#fff; --line:#e6ded6; --ink:#3a3330; --sub:#8b7d74;
+  --rose:#c08a90; --rose-d:#a76f76; --gold:#b99a66; --ok:#5b8c6e; --warn:#c2683f;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  font-size:15px;line-height:1.6;padding-bottom:40px}
+header{background:var(--rose);color:#fff;padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 0;
+  position:sticky;top:0;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+header h1{margin:0 0 10px;font-size:17px;font-weight:600;letter-spacing:.04em}
+nav{display:flex;gap:2px;overflow-x:auto}
+nav button{flex:0 0 auto;background:transparent;border:0;color:rgba(255,255,255,.75);
+  padding:10px 14px;font-size:14px;font-weight:600;border-radius:8px 8px 0 0;cursor:pointer}
+nav button.on{background:var(--bg);color:var(--rose-d)}
+main{padding:14px;max-width:820px;margin:0 auto}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.card h2{margin:0 0 10px;font-size:15px;font-weight:600;color:var(--rose-d);
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+label{display:block;font-size:12px;color:var(--sub);margin:0 0 3px;font-weight:600}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;
+  font-size:16px;background:#fff;color:var(--ink);font-family:inherit}
+input:focus,select:focus{outline:2px solid var(--rose);outline-offset:-1px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row>div{flex:1;min-width:110px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:9px;
+  padding:11px 16px;font-size:15px;font-weight:600;cursor:pointer;background:var(--rose);color:#fff}
+.btn:active{transform:translateY(1px)}
+.btn.sub{background:#fff;color:var(--rose-d);border:1px solid var(--rose)}
+.btn.ghost{background:#f2ece7;color:var(--sub)}
+.btn.warn{background:var(--warn)}
+.btn.sm{padding:6px 11px;font-size:13px;border-radius:7px}
+.btn.wide{width:100%;padding:14px}
+.line{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:#fdfbf9}
+.line .tag{display:inline-block;background:var(--rose);color:#fff;font-size:11px;font-weight:700;
+  padding:2px 8px;border-radius:20px;margin-bottom:6px}
+.line .tag.c{background:var(--gold)}.line .tag.p{background:var(--ok)}
+.line .tag.s{background:#7e93b8}.line .tag.o{background:#9a8f88}
+.del{background:none;border:0;color:var(--warn);font-size:13px;font-weight:600;cursor:pointer;padding:4px}
+.tot{display:flex;justify-content:space-between;padding:7px 0;border-top:1px dashed var(--line);font-size:14px}
+.tot b{font-size:17px}
+.mini{font-size:12px;color:var(--sub)}
+.chip{display:inline-block;background:#f2ece7;border-radius:20px;padding:3px 10px;font-size:12px;margin:2px 3px 2px 0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--sub);font-weight:600;font-size:12px}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.saleitem{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:#fff}
+.saleitem .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.saleitem .nm{font-weight:600}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);
+  background:var(--ink);color:#fff;padding:11px 20px;border-radius:24px;font-size:14px;
+  transition:transform .25s;z-index:99;max-width:90vw;text-align:center}
+#toast.on{transform:translateX(-50%) translateY(0)}
+.ok{color:var(--ok);font-weight:600}.ng{color:var(--warn);font-weight:600}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);
+  border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>ベモーレ 売上日報</h1>
+  <nav>
+    <button data-t="entry" class="on">入力</button>
+    <button data-t="list">一覧・修正</button>
+    <button data-t="stock">在庫払出</button>
+    <button data-t="unpaid">未収</button>
+    <button data-t="sum">集計</button>
+    <button data-t="conf">設定</button>
+  </nav>
+</header>
+<main>
+
+<!-- ══ 入力 ══ -->
+<section id="entry" class="on">
+  <div class="card">
+    <h2><span id="entryTitle">新しい会計</span><button class="btn ghost sm" id="btnNew">新規に戻す</button></h2>
+    <div class="row">
+      <div><label>日付（過去日もOK）</label><input type="date" id="f_date"></div>
+      <div><label>顧客名</label><input id="f_customer" list="dl_cust" placeholder="例：桑原様"><datalist id="dl_cust"></datalist></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div><label>担当者（施術した人）</label><select id="f_staff"></select></div>
+      <div><label>予約を取った人（折半する時だけ）</label><select id="f_appointer"><option value="">なし</option></select></div>
+    </div>
+    <div style="margin-top:8px"><label>メモ</label><input id="f_memo" placeholder="任意"></div>
+  </div>
+
+  <div class="card">
+    <h2>内容</h2>
+    <div id="items"></div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn sub sm" data-add="施術">＋施術</button>
+      <button class="btn sub sm" data-add="契約">＋契約</button>
+      <button class="btn sub sm" data-add="物販">＋物販</button>
+      <button class="btn sub sm" data-add="定期便">＋定期便</button>
+      <button class="btn sub sm" data-add="その他">＋その他</button>
+      <button class="btn sub sm" data-add="調整">＋調整</button>
+    </div>
+    <div class="tot"><span>税抜合計</span><span id="t_net">¥0</span></div>
+    <div class="tot"><span>税込合計</span><b id="t_gross">¥0</b></div>
+  </div>
+
+  <div class="card">
+    <h2>お支払い<span class="mini">複数に分けてOK・一部後日もOK</span></h2>
+    <div id="pays"></div>
+    <button class="btn sub sm" id="btnAddPay" style="margin-top:6px">＋支払いを足す</button>
+    <div class="tot"><span>支払合計</span><b id="t_pay">¥0</b></div>
+    <div id="payDiff" class="mini"></div>
+  </div>
+
+  <button class="btn wide" id="btnSave">保存する</button>
+</section>
+
+<!-- ══ 一覧・修正 ══ -->
+<section id="list">
+  <div class="card">
+    <h2>日付を選ぶ</h2>
+    <div class="row">
+      <div><input type="date" id="l_date"></div>
+      <div style="flex:0 0 auto"><button class="btn sm" id="btnLoadDay">表示</button></div>
+    </div>
+    <div class="mini" style="margin-top:6px">過去のどの日でも表示・修正・追加できます</div>
+  </div>
+  <div id="dayList"></div>
+</section>
+
+<!-- ══ 在庫払出 ══ -->
+<section id="stock">
+  <div class="card">
+    <h2>売上でない持ち出しを記録</h2>
+    <div class="row">
+      <div><label>日付</label><input type="date" id="k_date"></div>
+      <div><label>用途</label><select id="k_use"></select></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div style="flex:2"><label>商品</label><input id="k_name" list="dl_prod" placeholder="商品名"></div>
+      <div style="flex:0 0 80px"><label>数量</label><input type="number" id="k_qty" value="1" min="1"></div>
+      <div><label>金額（税抜・任意）</label><input type="number" id="k_amount" placeholder="0"></div>
+    </div>
+    <div style="margin-top:8px"><label>メモ</label><input id="k_memo" placeholder="任意"></div>
+    <button class="btn wide" id="btnSaveStock" style="margin-top:10px">払出を記録</button>
+  </div>
+  <div class="card">
+    <h2>今月の払出<button class="btn ghost sm" id="btnReloadStock">更新</button></h2>
+    <div id="stockList"></div>
+  </div>
+</section>
+
+<!-- ══ 未収 ══ -->
+<section id="unpaid">
+  <div class="card">
+    <h2>後日いただく分<button class="btn ghost sm" id="btnReloadUnpaid">更新</button></h2>
+    <div id="unpaidList"></div>
+  </div>
+</section>
+
+<!-- ══ 集計 ══ -->
+<section id="sum">
+  <div class="card">
+    <h2>月を選ぶ</h2>
+    <div class="row">
+      <div><input type="month" id="s_month"></div>
+      <div style="flex:0 0 auto"><button class="btn sm" id="btnSum">集計する</button></div>
+      <div style="flex:0 0 auto"><button class="btn sub sm" id="btnCsv">CSV保存</button></div>
+    </div>
+  </div>
+  <div id="sumBody"></div>
+</section>
+
+<!-- ══ 設定 ══ -->
+<section id="conf">
+  <div class="card">
+    <h2>管理者PIN</h2>
+    <input type="password" id="c_pin" inputmode="numeric" placeholder="PINを入力すると編集できます">
+    <div class="mini" style="margin-top:6px">マスタの追加・変更・削除にはPINが要ります</div>
+  </div>
+  <div class="card">
+    <h2>商品マスタ<button class="btn sub sm" id="btnAddProd">＋追加</button></h2>
+    <div id="prodList"></div>
+  </div>
+  <div class="card">
+    <h2>メニューマスタ<button class="btn sub sm" id="btnAddMenu">＋追加</button></h2>
+    <div id="menuList"></div>
+  </div>
+  <div class="card">
+    <h2>スタッフ<button class="btn sub sm" id="btnAddStaff">＋追加</button></h2>
+    <div id="staffList"></div>
+  </div>
+</section>
+
+</main>
+<div id="toast"></div>
+<datalist id="dl_prod"></datalist>
+
+<script>
+// ★デプロイ後にGASウェブアプリのURLを貼る
+const API_URL = 'PASTE_GAS_WEBAPP_URL_HERE';
+
+let M = { products: [], menus: [], staff: [] };
+let PAY_METHODS = ['現金','JMS','Square','振込','HPポイント','その他'];
+let STOCK_USES = ['サロン使用','黒木購入'];
+let editing = null;   // 編集中の会計ID
+let createdAt = '';
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const yen = n => '¥' + (Number(n)||0).toLocaleString();
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'), ms); }
+
+async function api(action, payload={}, params={}){
+  const q = new URLSearchParams(Object.assign({action}, params)).toString();
+  const res = await fetch(API_URL + '?' + q, {
+    method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(Object.assign({action}, payload))
+  });
+  const j = await res.json();
+  if(!j.ok) throw new Error(j.error||'エラー');
+  return j.data;
+}
+
+// ─── タブ ───
+$$('nav button').forEach(b => b.onclick = () => {
+  $$('nav button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  $$('section').forEach(s=>s.classList.remove('on')); $('#'+b.dataset.t).classList.add('on');
+  if(b.dataset.t==='stock') loadStocks();
+  if(b.dataset.t==='unpaid') loadUnpaid();
+  if(b.dataset.t==='conf') renderMasters();
+});
+
+// ─── 明細行 ───
+const KIND_CONTRACT = ['通常契約','ラジショット','部位チケット'];
+function addItem(type, data){
+  const d = data || {};
+  const wrap = document.createElement('div');
+  wrap.className = 'line'; wrap.dataset.type = type;
+  const tagCls = {'施術':'','契約':'c','物販':'p','定期便':'s','その他':'o','調整':'o'}[type]||'o';
+  let body = '';
+  if(type==='施術'){
+    body = `<div class="row">
+      <div style="flex:2"><label>メニュー</label><select class="i_menu">${
+        M.menus.map(m=>`<option value="${esc(m.name)}" data-kind="${esc(m.kind)}" ${d.name===m.name?'selected':''}>${esc(m.name)}</option>`).join('')
+      }</select></div>
+      <div style="flex:0 0 78px"><label>部位数</label><input type="number" class="i_qty" value="${d.qty||1}" min="1"></div>
+      <div><label>金額（税抜）</label><input type="number" class="i_net" value="${d.net||0}" placeholder="回数券なら0"></div>
+    </div>
+    <div class="mini" style="margin-top:4px">回数券の消化は金額0のままでOK（インセンティブは付きます）</div>`;
+  } else if(type==='契約'){
+    body = `<div class="row">
+      <div style="flex:2"><label>コース名</label><input class="i_name" value="${esc(d.name||'')}" placeholder="例：全身12回"></div>
+      <div><label>種類</label><select class="i_kind">${
+        KIND_CONTRACT.map(k=>`<option ${d.kind===k?'selected':''}>${k}</option>`).join('')}</select></div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <div><label>契約金額（税抜）</label><input type="number" class="i_net" value="${d.net||0}"></div>
+      <div style="flex:0 0 100px"><label>プレゼント回数</label><input type="number" class="i_note" value="${esc(d.note||'')}" placeholder="0"></div>
+    </div>
+    <div class="mini" style="margin-top:4px">ラジショット・部位チケットは5%固定で件数に数えません</div>`;
+  } else if(type==='物販' || type==='定期便'){
+    body = `<div class="row">
+      <div style="flex:2"><label>商品</label><select class="i_prod">${
+        ['<option value="">— 選ぶ —</option>'].concat(M.products.map(p=>
+          `<option value="${esc(p.name)}" data-tax="${p.tax}" data-price="${p.price}" ${d.name===p.name?'selected':''}>${esc(p.name)}（${p.tax}%）</option>`)).join('')
+      }</select></div>
+      <div style="flex:0 0 72px"><label>数量</label><input type="number" class="i_qty" value="${d.qty||1}" min="1"></div>
+      <div><label>金額（税抜）</label><input type="number" class="i_net" value="${d.net||0}"></div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <div style="flex:0 0 96px"><label>税率</label><select class="i_tax">
+        <option value="8" ${Number(d.tax)===8?'selected':''}>8%</option>
+        <option value="10" ${Number(d.tax)!==8?'selected':''}>10%</option></select></div>
+      ${type==='定期便'?`<div style="flex:0 0 auto;padding-top:18px"><label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink)">
+        <input type="checkbox" class="i_first" style="width:auto" ${d.first?'checked':''}> 初回（インセンティブ対象外）</label></div>`:''}
+    </div>`;
+  } else {
+    body = `<div class="row">
+      <div style="flex:2"><label>名称</label><input class="i_name" value="${esc(d.name||'')}" placeholder="${type==='調整'?'例：解約によるインセン返金':'例：初回料金'}"></div>
+      <div><label>金額（税抜${type==='調整'?'・マイナス可':''}）</label><input type="number" class="i_net" value="${d.net||0}"></div>
+      <div style="flex:0 0 92px"><label>税率</label><select class="i_tax">
+        <option value="8" ${Number(d.tax)===8?'selected':''}>8%</option>
+        <option value="10" ${Number(d.tax)!==8&&Number(d.tax)!==0?'selected':''}>10%</option>
+        <option value="0" ${Number(d.tax)===0?'selected':''}>0%</option></select></div>
+    </div>`;
+  }
+  wrap.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="tag ${tagCls}">${type}</span><button class="del">削除</button></div>${body}`;
+  wrap.querySelector('.del').onclick = () => { wrap.remove(); recalc(); };
+  const prod = wrap.querySelector('.i_prod');
+  if(prod) prod.onchange = () => {
+    const o = prod.selectedOptions[0]; if(!o || !o.value) return;
+    wrap.querySelector('.i_tax').value = o.dataset.tax;
+    const qty = Number(wrap.querySelector('.i_qty').value)||1;
+    wrap.querySelector('.i_net').value = Math.round(Number(o.dataset.price)*qty);
+    recalc();
+  };
+  const qty = wrap.querySelector('.i_qty');
+  if(qty && prod) qty.onchange = () => { if(prod.value) prod.onchange(); };
+  wrap.querySelectorAll('input,select').forEach(el => el.addEventListener('change', recalc));
+  $('#items').appendChild(wrap);
+  recalc();
+}
+$$('[data-add]').forEach(b => b.onclick = () => addItem(b.dataset.add));
+
+function readItems(){
+  return $$('#items .line').map(w => {
+    const type = w.dataset.type;
+    const net = Number(w.querySelector('.i_net')?.value||0);
+    if(type==='施術'){
+      const sel = w.querySelector('.i_menu');
+      const o = sel.selectedOptions[0];
+      return { type, name: sel.value, kind: o?o.dataset.kind:'対象外',
+               qty: Number(w.querySelector('.i_qty').value)||1, tax:10, net };
+    }
+    if(type==='契約'){
+      return { type, name: w.querySelector('.i_name').value, kind: w.querySelector('.i_kind').value,
+               qty:1, tax:10, net, note: w.querySelector('.i_note').value };
+    }
+    if(type==='物販'||type==='定期便'){
+      return { type, name: w.querySelector('.i_prod').value, kind: type,
+               qty: Number(w.querySelector('.i_qty').value)||1,
+               tax: Number(w.querySelector('.i_tax').value), net,
+               first: !!w.querySelector('.i_first')?.checked };
+    }
+    return { type, name: w.querySelector('.i_name').value, kind:'対象外', qty:1,
+             tax: Number(w.querySelector('.i_tax').value), net };
+  }).filter(i => i.name);
+}
+
+// ─── 支払行 ───
+function addPay(data){
+  const d = data || {};
+  const w = document.createElement('div');
+  w.className = 'line';
+  w.innerHTML = `<div class="row">
+    <div><label>方法</label><select class="p_method">${
+      PAY_METHODS.map(m=>`<option ${d.method===m?'selected':''}>${m}</option>`).join('')}</select></div>
+    <div><label>金額（税込）</label><input type="number" class="p_amount" value="${d.amount||''}"></div>
+    <div style="flex:0 0 auto;padding-top:18px"><label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink)">
+      <input type="checkbox" class="p_later" style="width:auto" ${d.status==='未収'?'checked':''}> 後日</label></div>
+    <div style="flex:0 0 auto;padding-top:14px"><button class="del">削除</button></div>
+  </div>`;
+  w.querySelector('.del').onclick = () => { w.remove(); recalc(); };
+  w.querySelectorAll('input,select').forEach(el => el.addEventListener('input', recalc));
+  $('#pays').appendChild(w);
+  recalc();
+}
+$('#btnAddPay').onclick = () => addPay();
+function readPays(){
+  return $$('#pays .line').map(w => ({
+    method: w.querySelector('.p_method').value,
+    amount: Number(w.querySelector('.p_amount').value||0),
+    status: w.querySelector('.p_later').checked ? '未収' : '入金済'
+  })).filter(p => p.amount);
+}
+
+function recalc(){
+  const items = readItems();
+  let net=0, gross=0;
+  items.forEach(i => { net += i.net; gross += Math.round(i.net*(1+i.tax/100)); });
+  $('#t_net').textContent = yen(net);
+  $('#t_gross').textContent = yen(gross);
+  const pay = readPays().reduce((a,p)=>a+p.amount,0);
+  $('#t_pay').textContent = yen(pay);
+  const diff = gross - pay;
+  $('#payDiff').innerHTML = (gross===0 && pay===0) ? '<span class="mini">回数券の消化だけなら支払いは空でOK</span>'
+    : (diff===0 ? '<span class="ok">✓ 合計と一致しています</span>'
+      : `<span class="ng">差額 ${yen(diff)}（${diff>0?'支払いが不足':'支払いが多い'}）</span>`);
+}
+
+// ─── 保存 ───
+$('#btnSave').onclick = async () => {
+  const btn = $('#btnSave');
+  const payload = {
+    id: editing || '', createdAt,
+    date: $('#f_date').value, customer: $('#f_customer').value.trim(),
+    staff: $('#f_staff').value, appointer: $('#f_appointer').value,
+    memo: $('#f_memo').value.trim(), items: readItems(), payments: readPays()
+  };
+  if(!payload.items.length) return toast('内容を1つ以上入れてください');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 保存中';
+  try{
+    await api('saveSale', payload);
+    toast(editing ? '修正しました' : '保存しました');
+    resetForm();
+  }catch(e){ toast('保存できません：' + e.message, 4000); }
+  btn.disabled = false; btn.textContent = '保存する';
+};
+
+function resetForm(){
+  editing = null; createdAt = '';
+  $('#entryTitle').textContent = '新しい会計';
+  $('#f_customer').value=''; $('#f_memo').value=''; $('#f_appointer').value='';
+  $('#items').innerHTML=''; $('#pays').innerHTML='';
+  recalc();
+}
+$('#btnNew').onclick = resetForm;
+
+// ─── 一覧・修正 ───
+$('#btnLoadDay').onclick = loadDay;
+async function loadDay(){
+  const date = $('#l_date').value;
+  if(!date) return toast('日付を選んでください');
+  $('#dayList').innerHTML = '<div class="card mini">読み込み中…</div>';
+  try{
+    const sales = await api('getSales', {}, { date });
+    if(!sales.length){
+      $('#dayList').innerHTML = `<div class="card"><div class="mini">この日の記録はまだありません</div>
+        <button class="btn sm sub" style="margin-top:8px" onclick="newOn('${date}')">この日に入力する</button></div>`;
+      return;
+    }
+    let net=0, gross=0;
+    const html = sales.map(s => {
+      net+=s.net; gross+=s.gross;
+      const items = s.items.map(i =>
+        `<div class="mini">・${esc(i.type)}：${esc(i.name)}${i.qty>1?' ×'+i.qty:''} ${i.net?yen(i.net)+'（税抜）':'（消化）'}</div>`).join('');
+      const pays = s.payments.map(p =>
+        `<span class="chip">${esc(p.method)} ${yen(p.amount)}${p.status==='未収'?' 後日':''}</span>`).join('');
+      return `<div class="saleitem">
+        <div class="hd"><div><div class="nm">${esc(s.customer||'（名前なし）')}</div>
+          <div class="mini">担当 ${esc(s.staff)}${s.appointer?' / アポ '+esc(s.appointer):''}</div></div>
+          <div style="text-align:right"><div><b>${yen(s.gross)}</b></div>
+          <div class="mini">税抜 ${yen(s.net)}</div></div></div>
+        <div style="margin-top:6px">${items}</div>
+        <div style="margin-top:6px">${pays}</div>
+        ${s.memo?`<div class="mini" style="margin-top:4px">📝 ${esc(s.memo)}</div>`:''}
+        <div style="margin-top:8px;display:flex;gap:6px">
+          <button class="btn sub sm" onclick="editSale('${s.id}')">修正</button>
+          <button class="btn ghost sm" onclick="removeSale('${s.id}')">削除</button></div>
+      </div>`;
+    }).join('');
+    $('#dayList').innerHTML = `<div class="card"><h2>${date} の合計</h2>
+      <div class="tot"><span>税抜</span><span>${yen(net)}</span></div>
+      <div class="tot"><span>税込</span><b>${yen(gross)}</b></div>
+      <button class="btn sm sub" style="margin-top:8px" onclick="newOn('${date}')">この日に追加する</button></div>` + html;
+  }catch(e){ $('#dayList').innerHTML = `<div class="card ng">${esc(e.message)}</div>`; }
+}
+function newOn(date){
+  resetForm(); $('#f_date').value = date;
+  $$('nav button')[0].click(); toast(date + ' で入力します');
+}
+async function editSale(id){
+  try{
+    const s = await api('getSale', {}, { id });
+    resetForm();
+    editing = s.id; createdAt = s.createdAt;
+    $('#entryTitle').textContent = '修正：' + s.date + ' ' + (s.customer||'');
+    $('#f_date').value = s.date; $('#f_customer').value = s.customer||'';
+    $('#f_staff').value = s.staff; $('#f_appointer').value = s.appointer||'';
+    $('#f_memo').value = s.memo||'';
+    s.items.forEach(i => addItem(i.type, i));
+    s.payments.forEach(p => addPay(p));
+    recalc();
+    $$('nav button')[0].click();
+  }catch(e){ toast(e.message); }
+}
+async function removeSale(id){
+  const pin = prompt('削除するには管理者PINを入れてください');
+  if(!pin) return;
+  try{ await api('deleteSale', { id, pin }); toast('削除しました'); loadDay(); }
+  catch(e){ toast('削除できません：' + e.message); }
+}
+
+// ─── 在庫払出 ───
+$('#btnSaveStock').onclick = async () => {
+  const d = { date:$('#k_date').value, name:$('#k_name').value.trim(), qty:Number($('#k_qty').value)||1,
+              use:$('#k_use').value, amount:Number($('#k_amount').value)||0, memo:$('#k_memo').value.trim() };
+  if(!d.name) return toast('商品を入れてください');
+  try{ await api('saveStock', d); toast('記録しました');
+    $('#k_name').value=''; $('#k_qty').value=1; $('#k_amount').value=''; $('#k_memo').value='';
+    loadStocks();
+  }catch(e){ toast(e.message); }
+};
+$('#btnReloadStock').onclick = loadStocks;
+async function loadStocks(){
+  const month = ($('#k_date').value || new Date().toISOString().slice(0,10)).slice(0,7);
+  try{
+    const rows = await api('getStocks', {}, { month });
+    if(!rows.length){ $('#stockList').innerHTML = '<div class="mini">まだありません</div>'; return; }
+    $('#stockList').innerHTML = `<table><tr><th>日付</th><th>商品</th><th class="n">数</th><th>用途</th><th class="n">金額</th><th></th></tr>`
+      + rows.map(r => `<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.name)}</td><td class="n">${r.qty}</td>
+        <td>${esc(r.use)}</td><td class="n">${r.amount?yen(r.amount):'—'}</td>
+        <td><button class="del" onclick="removeStock('${r.id}')">削除</button></td></tr>`).join('') + '</table>';
+  }catch(e){ $('#stockList').innerHTML = `<div class="ng">${esc(e.message)}</div>`; }
+}
+async function removeStock(id){
+  const pin = prompt('削除するには管理者PINを入れてください');
+  if(!pin) return;
+  try{ await api('deleteStock', { id, pin }); toast('削除しました'); loadStocks(); }
+  catch(e){ toast(e.message); }
+}
+
+// ─── 未収 ───
+$('#btnReloadUnpaid').onclick = loadUnpaid;
+async function loadUnpaid(){
+  try{
+    const rows = await api('getUnpaid');
+    if(!rows.length){ $('#unpaidList').innerHTML = '<div class="mini">未収はありません</div>'; return; }
+    $('#unpaidList').innerHTML = rows.map(r => `<div class="line">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div><div class="nm">${esc(r.customer||'（名前なし）')} <span class="mini">${esc(r.date)}</span></div>
+          <div class="mini">${esc(r.method)}</div></div>
+        <div style="text-align:right"><b>${yen(r.amount)}</b></div></div>
+      <div class="row" style="margin-top:8px">
+        <div><select class="u_m">${PAY_METHODS.map(m=>`<option ${m===r.method?'selected':''}>${m}</option>`).join('')}</select></div>
+        <div><input type="date" class="u_d" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div style="flex:0 0 auto"><button class="btn sm" onclick="settle(this,'${r.id}')">入金済にする</button></div>
+      </div></div>`).join('');
+  }catch(e){ $('#unpaidList').innerHTML = `<div class="ng">${esc(e.message)}</div>`; }
+}
+async function settle(btn, id){
+  const box = btn.closest('.line');
+  try{
+    await api('settlePayment', { id, method: box.querySelector('.u_m').value, paidDate: box.querySelector('.u_d').value });
+    toast('入金済にしました'); loadUnpaid();
+  }catch(e){ toast(e.message); }
+}
+
+// ─── 集計 ───
+$('#btnSum').onclick = loadSummary;
+async function loadSummary(){
+  const month = $('#s_month').value;
+  if(!month) return toast('月を選んでください');
+  $('#sumBody').innerHTML = '<div class="card mini">集計中…</div>';
+  try{
+    const [s, inc] = await Promise.all([api('getSummary', {}, { month }), api('getIncentive', {}, { month })]);
+    const taxRows = Object.keys(s.byTax).sort().map(k =>
+      `<tr><td>${k}%</td><td class="n">${yen(s.byTax[k].net)}</td><td class="n">${yen(s.byTax[k].gross)}</td></tr>`).join('');
+    const methodRows = Object.keys(s.byMethod).map(k =>
+      `<tr><td>${esc(k)}</td><td class="n">${yen(s.byMethod[k].paid)}</td><td class="n">${s.byMethod[k].unpaid?yen(s.byMethod[k].unpaid):'—'}</td></tr>`).join('');
+    const typeRows = Object.keys(s.byType).map(k =>
+      `<tr><td>${esc(k)}</td><td class="n">${yen(s.byType[k].net)}</td></tr>`).join('');
+    const stockRows = Object.keys(s.stock).map(k =>
+      `<tr><td>${esc(k)}</td><td class="n">${s.stock[k].qty}点</td><td class="n">${s.stock[k].amount?yen(s.stock[k].amount):'—'}</td></tr>`).join('');
+    const incCards = inc.staff.map(p => `<div class="card">
+      <h2>${esc(p.staff)} のインセンティブ</h2>
+      <div class="tot"><span>施術</span><span>${yen(p.treat)}</span></div>
+      <div class="tot"><span>契約</span><span>${yen(p.contract)}</span></div>
+      <div class="tot"><span>物販10%</span><span>${yen(p.product)}</span></div>
+      <div class="tot"><span>定期便5%</span><span>${yen(p.subscribe)}</span></div>
+      ${p.adjust?`<div class="tot"><span>調整</span><span>${yen(p.adjust)}</span></div>`:''}
+      <div class="tot"><span>合計（日当は別）</span><b>${yen(p.total)}</b></div>
+      <details style="margin-top:8px"><summary class="mini">内訳を見る（${p.detail.length}件）</summary>
+        <table style="margin-top:6px">${p.detail.map(d =>
+          `<tr><td>${esc(d.date.slice(5))}</td><td>${esc(d.label)}</td><td class="n">${yen(d.amount)}</td></tr>`).join('')}</table>
+      </details></div>`).join('');
+    $('#sumBody').innerHTML = `
+      <div class="card"><h2>${esc(s.month)} の売上</h2>
+        <div class="tot"><span>税抜</span><span>${yen(s.net)}</span></div>
+        <div class="tot"><span>税込</span><b>${yen(s.gross)}</b></div>
+        ${s.unpaid?`<div class="tot"><span>うち未収</span><span class="ng">${yen(s.unpaid)}</span></div>`:''}
+        <div class="mini" style="margin-top:6px">${s.count}明細</div></div>
+      <div class="card"><h2>税率別</h2><table><tr><th>税率</th><th class="n">税抜</th><th class="n">税込</th></tr>${taxRows}</table></div>
+      <div class="card"><h2>支払方法別</h2><table><tr><th>方法</th><th class="n">入金済</th><th class="n">未収</th></tr>${methodRows}</table></div>
+      <div class="card"><h2>種別</h2><table><tr><th>種別</th><th class="n">税抜</th></tr>${typeRows}</table></div>
+      <div class="card"><h2>在庫払出（売上外）</h2><table><tr><th>用途</th><th class="n">数量</th><th class="n">金額</th></tr>${stockRows}</table></div>
+      ${incCards}`;
+  }catch(e){ $('#sumBody').innerHTML = `<div class="card ng">${esc(e.message)}</div>`; }
+}
+$('#btnCsv').onclick = async () => {
+  const month = $('#s_month').value;
+  if(!month) return toast('月を選んでください');
+  try{
+    const r = await api('exportCsv', {}, { month });
+    const blob = new Blob(['﻿' + r.csv], { type:'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = r.filename; a.click();
+    toast('CSVを保存しました');
+  }catch(e){ toast(e.message); }
+};
+
+// ─── 設定（マスタ）───
+function masterRow(type, label, name, extra){
+  return `<tr><td>${esc(name)}</td><td class="mini">${esc(extra||'')}</td>
+    <td><button class="del" onclick="delMaster('${type}','${esc(name)}')">削除</button></td></tr>`;
+}
+function renderMasters(){
+  $('#prodList').innerHTML = '<table>' + M.products.map(p =>
+    masterRow('product','商品',p.name, p.tax+'% / '+yen(p.price))).join('') + '</table>';
+  $('#menuList').innerHTML = '<table>' + M.menus.map(m =>
+    masterRow('menu','メニュー',m.name, m.kind)).join('') + '</table>';
+  $('#staffList').innerHTML = '<table>' + M.staff.map(s =>
+    masterRow('staff','スタッフ',s.name, s.incentive?'インセンティブ対象':'対象外')).join('') + '</table>';
+}
+$('#btnAddProd').onclick = async () => {
+  const name = prompt('商品名'); if(!name) return;
+  const tax = prompt('税率（8 か 10）', '10'); const price = prompt('税抜単価', '0');
+  await saveMaster({ type:'product', name, tax:Number(tax), price:Number(price) });
+};
+$('#btnAddMenu').onclick = async () => {
+  const name = prompt('メニュー名'); if(!name) return;
+  const kind = prompt('インセンティブ区分（全身 / 半身 / セルマン / プラペン / 部位 / 対象外）', '全身');
+  await saveMaster({ type:'menu', name, kind });
+};
+$('#btnAddStaff').onclick = async () => {
+  const name = prompt('スタッフ名'); if(!name) return;
+  const inc = confirm('インセンティブの対象にしますか？（キャンセル＝対象外）');
+  await saveMaster({ type:'staff', name, incentive: inc });
+};
+async function saveMaster(d){
+  const pin = $('#c_pin').value;
+  if(!pin) return toast('先に管理者PINを入れてください');
+  try{ await api('saveMaster', Object.assign({ pin }, d)); toast('登録しました'); await boot(true); renderMasters(); }
+  catch(e){ toast(e.message); }
+}
+async function delMaster(type, name){
+  const pin = $('#c_pin').value;
+  if(!pin) return toast('先に管理者PINを入れてください');
+  if(!confirm(name + ' を使わないようにしますか？（過去の記録は残ります）')) return;
+  try{ await api('deleteMaster', { pin, type, name }); toast('外しました'); await boot(true); renderMasters(); }
+  catch(e){ toast(e.message); }
+}
+
+// ─── 起動 ───
+async function boot(silent){
+  try{
+    const d = await api('getStartupData');
+    M = d.masters; PAY_METHODS = d.payMethods; STOCK_USES = d.stockUses;
+    const opt = n => `<option>${esc(n)}</option>`;
+    $('#f_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
+    $('#f_appointer').innerHTML = '<option value="">なし</option>' + M.staff.map(s=>opt(s.name)).join('');
+    $('#k_use').innerHTML = STOCK_USES.map(opt).join('');
+    $('#dl_prod').innerHTML = M.products.map(p=>`<option value="${esc(p.name)}">`).join('');
+    if(!silent){
+      $('#f_date').value = d.today; $('#l_date').value = d.today;
+      $('#k_date').value = d.today; $('#s_month').value = d.month;
+      addPay();
+    }
+  }catch(e){ if(!silent) toast('接続できません：' + e.message, 5000); }
+}
+boot();
+setInterval(() => api('keepWarm').catch(()=>{}), 5*60*1000);
+</script>
+</body>
+</html>
