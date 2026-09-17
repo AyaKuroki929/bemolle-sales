@@ -68,6 +68,13 @@ sale('2026-08-28', 'お客様G', Y, [{t:'施術',n:'全身',k:'全身'}], 'オ�
 sale('2026-08-29', 'お客様H', Y, [{t:'定期便',n:'コーヒー',k:'定期便',net:10000,first:true},
                                 {t:'定期便',n:'ベーシック',k:'定期便',net:20000}]);
 
+// 一部後日（未収）でも、インセンティブは契約した日に全額付く（2026-09-17 彩さん決定＝A案）
+sale('2026-08-30', 'お客様I', Y, [{t:'契約',n:'全身6回',k:'通常契約',net:100000}]);
+P.push({ '入金ID':'P-1', '会計ID':'S'+n, '会計日':'2026-08-30', '支払方法':'現金',
+         '金額':40000, '状態':'入金済', '入金日':'2026-08-30', 'メモ':'' });
+P.push({ '入金ID':'P-2', '会計ID':'S'+n, '会計日':'2026-08-30', '支払方法':'現金',
+         '金額':70000, '状態':'未収', '入金日':'', 'メモ':'9/5に残金' });
+
 ctx.loadAll_ = () => ({ sales: S, items: I, payments: P });
 ctx.getMasters = () => ({ products: [], menus: [], staff: [{ name: Y, incentive: true }, { name: 'オーナー', incentive: false }] });
 
@@ -94,7 +101,7 @@ expect.forEach((e, i) => {
 
 console.log('\n■ その他の検証');
 const checks = [
-  ['契約合計', r.contract, 14364+9900+24192+12129+28728+30240+5000],
+  ['契約合計（7件目10%の10,000を含む）', r.contract, 14364+9900+24192+12129+28728+30240+5000+10000],
   ['物販10%（105,600＋7,700=113,300 → 11,330）', r.product, 11330],
   ['定期便5%（初回除く20,000 → 1,000）', r.subscribe, 1000],
   ['施術（全身 6件 ＋ 上限内3件 ＋ 折半0.5件）',
@@ -105,6 +112,11 @@ checks.forEach(c => {
   if (!okk) ng++;
   console.log(`  ${okk ? '✅' : '❌'} ${c[0]} → 期待 ${c[2].toLocaleString()} / 計算 ${c[1].toLocaleString()}`);
 });
+const later = r.detail.filter(d => d.date === '2026-08-30');
+const laterOk = later.length === 1 && later[0].amount === 10000;
+if (!laterOk) ng++;
+console.log(`  ${laterOk ? '✅' : '❌'} 一部後日（4万入金・7万未収）でも契約日8/30に全額 → 期待 10,000 / 計算 ${later.map(d=>d.amount).join(',') || 'なし'}`);
+
 console.log(`\n  1日上限の確認（8/26に全身4件）: ${r.detail.filter(d=>d.date==='2026-08-26'&&d.amount>0).length}件分だけ加算 ＋ 上限超 ${r.detail.filter(d=>/上限超/.test(d.label)).length}件`);
 console.log(`\n合計（日当は別）: ${r.total.toLocaleString()}円`);
 console.log(ng === 0 ? '\n🎉 全項目 一致' : `\n⚠️ ${ng}件 不一致`);
