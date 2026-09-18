@@ -130,7 +130,8 @@ def main():
             sid, apo, memo, made, state = o[0], o[4], o[5], o[9], o[8]
             # 金額が変わったのに支払が入っている＝黙って食い違わせない
             if sid in paid_ids and str(o[7]) != str(gross):
-                state, _ = '要確認', changed.append(f'{d} {cust} 税込{o[7]}→{gross}')
+                # ログは公開リポジトリに残るので、名前は出さず会計IDだけにする
+                state, _ = '要確認', changed.append(f'{sid} 税込{o[7]}→{gross}')
         else:
             used_seq[d.replace('-', '')] += 1
             sid = 'S' + d.replace('-', '') + f'{used_seq[d.replace("-", "")]:03d}'
@@ -147,7 +148,7 @@ def main():
     for key, o in prev.items():
         if o[0] in paid_ids:
             o[8] = '要確認'; sales.append(o)
-            changed.append(f'{key[0]} {key[1]} うらかたさんから消えたが入金あり')
+            changed.append(f'{o[0]} うらかたさんから消えたが入金あり')
             details += [r for r in old_det if r[1] == o[0]]
 
     sales.sort(key=lambda r: (r[1], r[0]))
@@ -162,7 +163,7 @@ def main():
     print('種別:', dict(collections.Counter(d[3] for d in details)))
     for c in changed: print('  ⚠️ 要確認:', c)
     if dry:
-        for s in sales[:5]: print('  ', s[:5], s[6:9])
+        for s in sales[:5]: print('  ', s[0], s[1], s[6:9])   # 名前は出さない（公開ログ対策）
         return
     for name in ['会計', '明細']:
         api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/' +

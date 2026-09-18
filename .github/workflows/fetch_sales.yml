@@ -44,16 +44,21 @@ jobs:
           SHEET_ID: ${{ secrets.SHEET_ID }}
         run: python3 import_sales.py "out/urakata_${{ steps.m.outputs.month }}.csv"
 
-      - name: 取ってきた中身を残す（確認用）
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: 取得データ
-          path: |
-            out/*.csv
-            out/*.png
-          if-no-files-found: ignore
-          retention-days: 7
+      # ⚠️ このリポジトリは公開（GitHub Pages を使うため）。
+      # お客様の名前が入るCSV・スクリーンショットは絶対に成果物として残さない。
+      - name: 失敗したとき、名前を伏せた手がかりだけ残す
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import os, re
+          for f in sorted(os.listdir('out')) if os.path.isdir('out') else []:
+              print('出力ファイル:', f, os.path.getsize(os.path.join('out', f)), 'bytes')
+          p = 'out/urakata_${{ steps.m.outputs.month }}.csv'
+          if os.path.exists(p):
+              lines = open(p, encoding='utf-8-sig').read().splitlines()
+              print('CSV 行数:', len(lines) - 1)
+              print('見出し:', lines[0] if lines else '(空)')
+          PY
 
       - name: 失敗・要確認のときLINEで知らせる
         if: failure()
