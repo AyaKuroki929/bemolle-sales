@@ -50,6 +50,9 @@ const STOCK_USES  = ['サロン使用', '黒木購入'];
 // 日当5,000円がつかない日の理由
 const ALLOWANCE_REASONS = ['研修', '短時間勤務', 'その他'];
 
+// タイムカード（別スプレッドシート）。タブ名は「氏名_YYYY-MM」・列は 日付/出勤/退勤/日当(円)
+const TIMECARD_ID = '1gXmNha2fizWQsn7Y64kaWhwxitpt-g6mDGfdFGTl2So';
+
 // ─── エントリポイント ───────────────────────────────
 function doGet(e)  { return handle(e.parameter, null); }
 function doPost(e) {
@@ -113,6 +116,7 @@ function handle(params, body) {
       case 'deleteMaster':    result = deleteMaster(d);            break;
       case 'getSummary':      result = getSummary(params.month);   break;
       case 'getIncentive':    result = getIncentive(params.month); break;
+      case 'getSalary':       result = getSalary(params.month);    break;
       case 'exportCsv':       result = exportCsv(params.month);    break;
       case 'checkPin':        result = { ok: (d.pin || '') === getStoredPin() }; break;
       case 'changePin':       result = changePin(d);               break;
@@ -785,6 +789,47 @@ function getIncentive(month) {
     r.detail.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
   });
   return { month: month, staff: Object.keys(result).map(function (k) { return result[k]; }) };
+}
+
+// ─── タイムカードから日当を読む ────────────────────────
+/** 指定した月・スタッフの出勤日数と日当合計を返す。読めない時は0で返す（画面を止めない） */
+function getTimecard(month, staff) {
+  try {
+    const ss = SpreadsheetApp.openById(TIMECARD_ID);
+    const sheet = ss.getSheetByName(staff + '_' + month);
+    if (!sheet) return { days: 0, total: 0, found: false };
+    const last = sheet.getLastRow();
+    if (last <= 1) return { days: 0, total: 0, found: true };
+    const vals = sheet.getRange(2, 1, last - 1, 4).getValues();
+    let days = 0, total = 0;
+    vals.forEach(function (r) {
+      if (!r[0]) return;
+      const amt = Number(String(r[3]).replace(/[^0-9-]/g, '')) || 0;
+      if (amt) { days++; total += amt; }
+    });
+    return { days: days, total: total, found: true };
+  } catch (e) {
+    return { days: 0, total: 0, found: false, error: String(e).slice(0, 80) };
+  }
+}
+
+/** 月のお給料を1本にまとめる：日当 ＋ 特別日当 ＋ インセンティブ */
+function getSalary(month) {
+  if (!month) month = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM');
+  const inc = getIncentive(month);
+  const allowances = getAllowances({ month: month });
+  const extra = {};
+  allowances.forEach(function (a) { extra[a.staff] = (extra[a.staff] || 0) + a.amount; });
+
+  const rows = inc.staff.map(function (p) {
+    const tc = getTimecard(month, p.staff);
+    return { staff: p.staff, days: tc.days, daily: tc.total, timecardFound: tc.found,
+             extra: extra[p.staff] || 0, incentive: p.total,
+             breakdown: { treat: p.treat, contract: p.contract, product: p.product,
+                          subscribe: p.subscribe, adjust: p.adjust },
+             total: tc.total + (extra[p.staff] || 0) + p.total };
+  });
+  return { month: month, staff: rows, allowances: allowances };
 }
 
 // ─── 税理士向けCSV ─────────────────────────────────

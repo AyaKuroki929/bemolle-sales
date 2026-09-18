@@ -297,13 +297,16 @@ async function settle(btn, id){
 }
 
 // ─── 集計 ───
+let SAL={staff:[]};
 $('#btnSum').onclick = loadSummary;
 async function loadSummary(){
   const month = $('#s_month').value;
   if(!month) return toast('月を選んでください');
   $('#sumBody').innerHTML = '<div class="card mini">集計中…</div>';
   try{
-    const [s, inc] = await Promise.all([api('getSummary', {}, { month }), api('getIncentive', {}, { month })]);
+    const [s, inc, sal] = await Promise.all([api('getSummary', {}, { month }),
+      api('getIncentive', {}, { month }), api('getSalary', {}, { month })]);
+    SAL = sal;
     const taxRows = Object.keys(s.byTax).sort().map(k =>
       `<tr><td>${k}%</td><td class="n">${yen(s.byTax[k].net)}</td><td class="n">${yen(s.byTax[k].gross)}</td></tr>`).join('');
     const methodRows = Object.keys(s.byMethod).map(k =>
@@ -312,18 +315,25 @@ async function loadSummary(){
       `<tr><td>${esc(k)}</td><td class="n">${yen(s.byType[k].net)}</td></tr>`).join('');
     const stockRows = Object.keys(s.stock).map(k =>
       `<tr><td>${esc(k)}</td><td class="n">${s.stock[k].qty}点</td><td class="n">${s.stock[k].amount?yen(s.stock[k].amount):'—'}</td></tr>`).join('');
-    const incCards = inc.staff.map(p => `<div class="card">
-      <h2>${esc(p.staff)} のインセンティブ</h2>
+    const incCards = inc.staff.map(p => {
+      const sal = (SAL.staff||[]).find(x=>x.staff===p.staff) || {};
+      return `<div class="card">
+      <h2>${esc(p.staff)} のお給料</h2>
+      ${sal.timecardFound===false?'<div class="mini ng">タイムカードが読めませんでした</div>':
+        `<div class="tot"><span>日当（出勤${sal.days||0}日）</span><span>${yen(sal.daily||0)}</span></div>`}
+      ${sal.extra?`<div class="tot"><span>特別日当</span><span>${yen(sal.extra)}</span></div>`:''}
+      <div class="tot"><span>インセンティブ</span><span>${yen(p.total)}</span></div>
+      <div class="tot"><span><b>支給合計</b></span><b style="font-size:19px">${yen(sal.total||p.total)}</b></div>
+      <div class="mini" style="margin-top:10px">インセンティブの内訳</div>
       <div class="tot"><span>施術</span><span>${yen(p.treat)}</span></div>
       <div class="tot"><span>契約</span><span>${yen(p.contract)}</span></div>
       <div class="tot"><span>物販10%</span><span>${yen(p.product)}</span></div>
       <div class="tot"><span>定期便5%</span><span>${yen(p.subscribe)}</span></div>
       ${p.adjust?`<div class="tot"><span>調整</span><span>${yen(p.adjust)}</span></div>`:''}
-      <div class="tot"><span>合計（日当は別）</span><b>${yen(p.total)}</b></div>
-      <details style="margin-top:8px"><summary class="mini">内訳を見る（${p.detail.length}件）</summary>
+      <details style="margin-top:8px"><summary class="mini">1件ずつ見る（${p.detail.length}件）</summary>
         <table style="margin-top:6px">${p.detail.map(d =>
           `<tr><td>${esc(d.date.slice(5))}</td><td>${esc(d.label)}</td><td class="n">${yen(d.amount)}</td></tr>`).join('')}</table>
-      </details></div>`).join('');
+      </details></div>`;}).join('');
     $('#sumBody').innerHTML = `
       <div class="card"><h2>${esc(s.month)} の売上</h2>
         <div class="tot"><span>税抜</span><span>${yen(s.net)}</span></div>
