@@ -74,10 +74,9 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <h1>ベモーレ 売上日報</h1>
   <nav>
     <button data-t="pay" class="on">支払入力</button>
-    <button data-t="list">一覧・修正</button>
-    <button data-t="allow">日当</button>
     <button data-t="stock">在庫払出</button>
     <button data-t="unpaid">未収</button>
+    <button data-t="allow">日当</button>
     <button data-t="sum">集計</button>
     <button data-t="conf">設定</button>
   </nav>
@@ -99,40 +98,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   </div>
   <div id="payList"></div>
 </section>
-<!-- ══ 一覧・修正 ══ -->
-<section id="list">
-  <div class="card">
-    <h2>日付を選ぶ</h2>
-    <div class="row">
-      <div><input type="date" id="l_date"></div>
-      <div style="flex:0 0 auto"><button class="btn sm" id="btnLoadDay">表示</button></div>
-    </div>
-    <div class="mini" style="margin-top:6px">過去のどの日でも表示・修正・追加できます</div>
-  </div>
-  <div id="dayList"></div>
-</section>
-
-<!-- ══ 日当 ══ -->
-<section id="allow">
-  <div class="card">
-    <h2>日当5,000円がつかない日を入れる</h2>
-    <div class="mini" style="margin-bottom:8px">研修や短時間勤務など、タイムカードにメモが入っていて日当が出ない日の金額をここに入れます</div>
-    <div class="row">
-      <div><label>日付</label><input type="date" id="a_date"></div>
-      <div><label>スタッフ</label><select id="a_staff"></select></div>
-    </div>
-    <div style="margin-top:8px"><label>金額</label>
-      <input type="text" inputmode="numeric" id="a_amount" placeholder="例：1200"></div>
-    <div style="margin-top:8px"><label>メモ（理由をここに書く）</label><input id="a_memo" placeholder="例：プラペン研修2時間（600円×2）"></div>
-    <button class="btn wide" id="btnSaveAllow" style="margin-top:10px">登録する</button>
-  </div>
-  <div class="card">
-    <h2><span id="a_title">今月の分</span><button class="btn ghost sm" id="btnReloadAllow">更新</button></h2>
-    <div class="row"><div><input type="month" id="a_month"></div></div>
-    <div id="allowList" style="margin-top:10px"></div>
-  </div>
-</section>
-
 <!-- ══ 在庫払出 ══ -->
 <section id="stock">
   <div class="card">
@@ -160,6 +125,27 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <div class="card">
     <h2>後日いただく分<button class="btn ghost sm" id="btnReloadUnpaid">更新</button></h2>
     <div id="unpaidList"></div>
+  </div>
+</section>
+
+<!-- ══ 日当 ══ -->
+<section id="allow">
+  <div class="card">
+    <h2>日当5,000円がつかない日を入れる</h2>
+    <div class="mini" style="margin-bottom:8px">研修や短時間勤務など、タイムカードにメモが入っていて日当が出ない日の金額をここに入れます</div>
+    <div class="row">
+      <div><label>日付</label><input type="date" id="a_date"></div>
+      <div><label>スタッフ</label><select id="a_staff"></select></div>
+    </div>
+    <div style="margin-top:8px"><label>金額</label>
+      <input type="text" inputmode="numeric" id="a_amount" placeholder="例：1200"></div>
+    <div style="margin-top:8px"><label>メモ（理由をここに書く）</label><input id="a_memo" placeholder="例：プラペン研修2時間（600円×2）"></div>
+    <button class="btn wide" id="btnSaveAllow" style="margin-top:10px">登録する</button>
+  </div>
+  <div class="card">
+    <h2><span id="a_title">今月の分</span><button class="btn ghost sm" id="btnReloadAllow">更新</button></h2>
+    <div class="row"><div><input type="month" id="a_month"></div></div>
+    <div id="allowList" style="margin-top:10px"></div>
   </div>
 </section>
 
@@ -254,50 +240,6 @@ $$('nav button').forEach(b => b.onclick = () => {
   if(b.dataset.t==='unpaid') loadUnpaid();
   if(b.dataset.t==='conf') renderMasters();
 });
-
-// ─── 一覧・修正 ───
-$('#btnLoadDay').onclick = loadDay;
-async function loadDay(){
-  const date = $('#l_date').value;
-  if(!date) return toast('日付を選んでください');
-  $('#dayList').innerHTML = '<div class="card mini">読み込み中…</div>';
-  try{
-    const sales = await api('getSales', {}, { date });
-    if(!sales.length){
-      $('#dayList').innerHTML = `<div class="card"><div class="mini">この日の記録はまだありません</div>
-        </div>`;
-      return;
-    }
-    let net=0, gross=0;
-    const html = sales.map(s => {
-      net+=s.net; gross+=s.gross;
-      const items = s.items.map(i =>
-        `<div class="mini">・${esc(i.type)}：${esc(i.name)}${i.qty>1?' ×'+i.qty:''} ${i.net?yen(i.net)+'（税抜）':'（消化）'}</div>`).join('');
-      const pays = s.payments.map(p =>
-        `<span class="chip">${esc(p.method)} ${yen(p.amount)}${p.status==='未収'?' 後日':''}</span>`).join('');
-      return `<div class="saleitem">
-        <div class="hd"><div><div class="nm">${esc(s.customer||'（名前なし）')}</div>
-          <div class="mini">担当 ${esc(s.staff)}${s.appointer?' / アポ '+esc(s.appointer):''}</div></div>
-          <div style="text-align:right"><div><b>${yen(s.gross)}</b></div>
-          <div class="mini">税抜 ${yen(s.net)}</div></div></div>
-        <div style="margin-top:6px">${items}</div>
-        <div style="margin-top:6px">${pays}</div>
-        ${s.memo?`<div class="mini" style="margin-top:4px">📝 ${esc(s.memo)}</div>`:''}
-        <div style="margin-top:8px"><button class="btn ghost sm" onclick="removeSale('${s.id}')">削除</button></div>
-      </div>`;
-    }).join('');
-    $('#dayList').innerHTML = `<div class="card"><h2>${date} の合計</h2>
-      <div class="tot"><span>税抜</span><span>${yen(net)}</span></div>
-      <div class="tot"><span>税込</span><b>${yen(gross)}</b></div>
-      </div>` + html;
-  }catch(e){ $('#dayList').innerHTML = `<div class="card ng">${esc(e.message)}</div>`; }
-}
-async function removeSale(id){
-  const pin = prompt('削除するには管理者PINを入れてください');
-  if(!pin) return;
-  try{ await api('deleteSale', { id, pin }); toast('削除しました'); loadDay(); }
-  catch(e){ toast('削除できません：' + e.message); }
-}
 
 // ─── 在庫払出 ───
 $('#btnSaveStock').onclick = async () => {
@@ -582,7 +524,6 @@ async function boot(silent){
     $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
     $('#dl_prod').innerHTML = M.products.map(p=>`<option value="${esc(p.name)}">`).join('');
     if(!silent){
-      $('#l_date').value = d.today;
       $('#k_date').value = d.today; $('#s_month').value = d.month; $('#p_month').value = d.month;
       $('#a_date').value = d.today; $('#a_month').value = d.month;
     }
