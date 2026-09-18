@@ -165,11 +165,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <!-- ══ 設定 ══ -->
 <section id="conf">
   <div class="card">
-    <h2>管理者PIN</h2>
-    <input type="password" id="c_pin" inputmode="numeric" placeholder="PINを入力すると編集できます">
-    <div class="mini" style="margin-top:6px">マスタの追加・変更・削除にはPINが要ります</div>
-  </div>
-  <div class="card">
     <h2>商品マスタ<button class="btn sub sm" id="btnAddProd">＋追加</button></h2>
     <div id="prodList"></div>
   </div>
@@ -405,16 +400,13 @@ $('#btnAddStaff').onclick = async () => {
   await saveMaster({ type:'staff', name, incentive: inc });
 };
 async function saveMaster(d){
-  const pin = $('#c_pin').value;
-  if(!pin) return toast('先に管理者PINを入れてください');
-  try{ await api('saveMaster', Object.assign({ pin }, d)); toast('登録しました'); await boot(true); renderMasters(); }
+  // PINは開いたときに入れたものを api() が付ける（設定タブ専用の欄は廃止・2026-09-18）
+  try{ await api('saveMaster', d); toast('登録しました'); await boot(true); renderMasters(); }
   catch(e){ toast(e.message); }
 }
 async function delMaster(type, name){
-  const pin = $('#c_pin').value;
-  if(!pin) return toast('先に管理者PINを入れてください');
   if(!confirm(name + ' を使わないようにしますか？（過去の記録は残ります）')) return;
-  try{ await api('deleteMaster', { pin, type, name }); toast('外しました'); await boot(true); renderMasters(); }
+  try{ await api('deleteMaster', { type, name }); toast('外しました'); await boot(true); renderMasters(); }
   catch(e){ toast(e.message); }
 }
 
