@@ -545,8 +545,11 @@ async function boot(silent){
     $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
     $('#dl_prod').innerHTML = M.products.map(p=>`<option value="${esc(p.name)}">`).join('');
     if(!silent){
-      $('#k_date').value = d.today; $('#s_month').value = d.month; $('#p_month').value = d.month;
-      $('#a_date').value = d.today; $('#a_month').value = d.month;
+      // URLに ?month=2026-08 が付いていればその月で開く（付いていなければ今月）
+      const q = new URLSearchParams(location.search).get('month');
+      const m = /^\d{4}-\d{2}$/.test(q || '') ? q : d.month;
+      $('#k_date').value = d.today; $('#s_month').value = m; $('#p_month').value = m;
+      $('#a_date').value = d.today; $('#a_month').value = m;
     }
   }catch(e){ if(!silent) toast('接続できません：' + e.message, 5000); }
 }
