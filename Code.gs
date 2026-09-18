@@ -235,7 +235,8 @@ function getMasters() {
   const byOrder = function (a, b) { return (Number(a['表示順']) || 0) - (Number(b['表示順']) || 0); };
   return {
     products: readSheet_(SH_PRODUCTS).filter(act).sort(byOrder).map(function (r) {
-      return { name: r['商品名'], tax: Number(r['税率']) || 10, price: Number(r['税抜単価']) || 0 };
+      return { name: r['商品名'], tax: Number(r['税率']) || 10, price: Number(r['税抜単価']) || 0,
+               brand: r['ブランド'] || '', cost: Number(r['仕入値']) || 0 };
     }),
     menus: readSheet_(SH_MENUS).filter(act).sort(byOrder).map(function (r) {
       return { name: r['メニュー名'], kind: r['区分'] || '対象外' };
@@ -252,20 +253,44 @@ function saveMaster(d) {
     const name = map[d.type];
     if (!name) throw new Error('種類が不正です');
     const s = sh(name);
-    const keyCol = 1;
-    const rows = s.getLastRow() > 1 ? s.getRange(2, 1, s.getLastRow() - 1, s.getLastColumn()).getValues() : [];
-    let line;
-    if (d.type === 'product') line = [d.name, Number(d.tax) || 10, Number(d.price) || 0, Number(d.order) || 99, true];
-    if (d.type === 'menu')    line = [d.name, d.kind || '対象外', Number(d.order) || 99, true];
-    if (d.type === 'staff')   line = [d.name, !!d.incentive, Number(d.order) || 99, true];
+    // 列の場所は見出しの名前で探す（並び順を決め打ちすると、列が増えたとき他の列を壊す）
+    const width = s.getLastColumn();
+    const head = s.getRange(1, 1, 1, width).getValues()[0];
+    const col = function (h) { return head.indexOf(h); };
+    const rows = s.getLastRow() > 1 ? s.getRange(2, 1, s.getLastRow() - 1, width).getValues() : [];
+
+    let at = -1;
     for (let i = 0; i < rows.length; i++) {
-      if (String(rows[i][keyCol - 1]) === String(d.originalName || d.name)) {
-        s.getRange(i + 2, 1, 1, line.length).setValues([line]);
-        return { updated: true };
+      if (String(rows[i][0]) === String(d.originalName || d.name)) { at = i; break; }
+    }
+    // 既にある行は今の中身から始める＝渡さなかった列は消さない
+    const line = at >= 0 ? rows[at].slice() : new Array(width).fill('');
+    const put = function (h, v) { const c = col(h); if (c >= 0 && v !== undefined && v !== null && v !== '') line[c] = v; };
+
+    if (d.type === 'product') {
+      put('商品名', d.name);
+      if (d.tax   !== undefined && d.tax   !== '') put('税率',     Number(d.tax)   || 10);
+      if (d.price !== undefined && d.price !== '') put('税抜単価', Number(d.price) || 0);
+      if (d.cost  !== undefined && d.cost  !== '') put('仕入値',   Number(d.cost)  || 0);
+      put('ブランド', d.brand);
+    } else if (d.type === 'menu') {
+      put('メニュー名', d.name);
+      put('区分', d.kind || '対象外');
+    } else {
+      put('氏名', d.name);
+      if (d.incentive !== undefined && col('インセンティブ対象') >= 0) {
+        line[col('インセンティブ対象')] = !!d.incentive;
       }
     }
-    s.appendRow(line);
-    return { created: true };
+    if (at < 0) {   // 新しく足すときだけ、表示順と有効を埋める
+      if (col('表示順') >= 0) line[col('表示順')] = Number(d.order) || 99;
+      if (col('有効')   >= 0) line[col('有効')]   = true;
+      s.appendRow(line);
+      return { created: true };
+    }
+    if (d.order !== undefined && d.order !== '' && col('表示順') >= 0) line[col('表示順')] = Number(d.order);
+    s.getRange(at + 2, 1, 1, width).setValues([line]);
+    return { updated: true };
   });
 }
 

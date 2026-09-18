@@ -372,13 +372,15 @@ $('#btnCsv').onclick = async () => {
 };
 
 // ─── 設定（マスタ）───
-function masterRow(type, label, name, extra){
-  return `<tr><td>${esc(name)}</td><td class="mini">${esc(extra||'')}</td>
-    <td><button class="del" onclick="delMaster('${type}','${esc(name)}')">削除</button></td></tr>`;
+function masterRow(type, label, shown, extra, key){
+  const k = key === undefined ? shown : key;   // 表示はブランド付き・削除は本来の名前で
+  return `<tr><td>${esc(shown)}</td><td class="mini">${esc(extra||'')}</td>
+    <td><button class="del" onclick="delMaster('${type}','${esc(k)}')">削除</button></td></tr>`;
 }
 function renderMasters(){
   $('#prodList').innerHTML = '<table>' + M.products.map(p =>
-    masterRow('product','商品',p.name, p.tax+'% / '+yen(p.price))).join('') + '</table>';
+    masterRow('product','商品', (p.brand ? p.brand+'　' : '') + p.name,
+              p.tax+'% / '+yen(p.price), p.name)).join('') + '</table>';
   $('#menuList').innerHTML = '<table>' + M.menus.map(m =>
     masterRow('menu','メニュー',m.name, m.kind)).join('') + '</table>';
   $('#staffList').innerHTML = '<table>' + M.staff.map(s =>
@@ -386,8 +388,11 @@ function renderMasters(){
 }
 $('#btnAddProd').onclick = async () => {
   const name = prompt('商品名'); if(!name) return;
+  const brand = prompt('ブランド（例 三蔵 / 季令 / グラントイーワンズ）', '');
   const tax = prompt('税率（8 か 10）', '10'); const price = prompt('税抜単価', '0');
-  await saveMaster({ type:'product', name, tax:Number(tax), price:Number(price) });
+  const cost = prompt('仕入値（分からなければ空のまま）', '');
+  await saveMaster({ type:'product', name, brand, tax:Number(tax), price:Number(price),
+                     cost: cost===''? undefined : Number(cost) });
 };
 $('#btnAddMenu').onclick = async () => {
   const name = prompt('メニュー名'); if(!name) return;
@@ -560,7 +565,7 @@ async function boot(silent){
     const opt = n => `<option>${esc(n)}</option>`;
     $('#k_use').innerHTML = STOCK_USES.map(opt).join('');
     $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
-    $('#dl_prod').innerHTML = M.products.map(p=>`<option value="${esc(p.name)}">`).join('');
+    $('#dl_prod').innerHTML = M.products.map(p=>`<option value="${esc(p.name)}">${esc(p.brand||'')}</option>`).join('');
     if(!silent){
       // URLに ?month=2026-08 が付いていればその月で開く（付いていなければ今月）
       const q = new URLSearchParams(location.search).get('month');
