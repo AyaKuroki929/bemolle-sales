@@ -804,6 +804,7 @@ function getIncentive(month) {
     });
 
   // ③ 物販10% ④ 定期便5%（初回は対象外）⑤ 調整
+  const subGroups = {}, subOrder = [];
   items.forEach(function (r) {
     const staff = r['担当者'] || '';
     if (targets.indexOf(staff) === -1) return;
@@ -814,17 +815,32 @@ function getIncentive(month) {
       ensure(staff).product += amt;
       ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（物販10%）', amount: amt });
     } else if (r['種別'] === '定期便') {
+      // 5%はお客様ごとにまとめてから。サブスク個数把握のQ列（お客様1行）と同じ出し方
       if (first) {
         ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（定期便・初回は対象外）', amount: 0 });
       } else {
-        const amt = Math.floor(netAmt * RATE_SUBSCRIBE);
-        ensure(staff).subscribe += amt;
-        ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（定期便5%）', amount: amt });
+        const head = saleById[String(r['会計ID'])] || {};
+        const k = staff + '|' + ymd_(r['日付']) + '|' + (head['顧客名'] || '');
+        if (!subGroups[k]) { subGroups[k] = { staff: staff, date: ymd_(r['日付']), net: 0, names: [] }; subOrder.push(k); }
+        subGroups[k].net += netAmt;
+        subGroups[k].names.push(r['名称']);
       }
     } else if (r['種別'] === '調整') {
       ensure(staff).adjust += netAmt;
       ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（調整）', amount: netAmt });
     }
+  });
+
+  // 定期便はお客様ごとの合計に5%をかけて切り捨てる（1商品ずつだと端数が余分に落ちる）
+  subOrder.forEach(function (k) {
+    const g = subGroups[k];
+    const amt = Math.floor(g.net * RATE_SUBSCRIBE);
+    ensure(g.staff).subscribe += amt;
+    ensure(g.staff).detail.push({
+      date: g.date,
+      label: g.names.join('・') + '（定期便5%・' + g.net.toLocaleString() + '円分）',
+      amount: amt
+    });
   });
 
   Object.keys(result).forEach(function (k) {
