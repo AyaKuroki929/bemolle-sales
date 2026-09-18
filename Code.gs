@@ -73,6 +73,7 @@ function getStoredPin() {
 function pinLockedUntil_() {
   return Number(PropertiesService.getScriptProperties().getProperty('PIN_LOCK_UNTIL') || 0);
 }
+// 総当たり対策。ただし本人が使えなくなる方が困るので、10回まちがえたら3分だけ止める
 function pinRateGuard_(pin) {
   const props = PropertiesService.getScriptProperties();
   const fails = Number(props.getProperty('PIN_FAILS') || 0);
@@ -84,7 +85,7 @@ function pinRateGuard_(pin) {
   }
   const n = fails + 1;
   props.setProperty('PIN_FAILS', String(n));
-  if (n >= 5) props.setProperty('PIN_LOCK_UNTIL', String(Date.now() + 10 * 60 * 1000));
+  if (n >= 10) props.setProperty('PIN_LOCK_UNTIL', String(Date.now() + 3 * 60 * 1000));
   return false;
 }
 

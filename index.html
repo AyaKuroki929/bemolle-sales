@@ -221,6 +221,7 @@ async function api(action, payload={}, params={}){
   });
   const j = await res.json();
   if(!j.ok){
+    if(/ロック中/.test(j.error||'')) throw new Error(j.error);
     if(j.error==='unauthorized'){
       try{ localStorage.removeItem('bemolle_pin'); }catch(e){}
       const v = await askPin('PINが違います。もう一度入れてください');
