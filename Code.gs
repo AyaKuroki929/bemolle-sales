@@ -20,6 +20,7 @@ const SH_PRODUCTS = '商品マスタ';
 const SH_MENUS    = 'メニューマスタ';
 const SH_STAFF    = 'スタッフ';
 const SH_SETTINGS = '設定';
+const SH_ALLOWANCE = '特別日当';
 const SH_ARCHIVE  = 'アーカイブ';
 
 // ── 報酬規定（2025-04-03版・PDF準拠。変更時はここだけ直す）──────────
@@ -46,6 +47,8 @@ const NO_COUNT_CONTRACTS = ['ラジショット', '部位チケット'];
 
 const PAY_METHODS = ['現金', 'JMS', 'Square', '振込', 'HPポイント', 'その他'];
 const STOCK_USES  = ['サロン使用', '黒木購入'];
+// 日当5,000円がつかない日の理由
+const ALLOWANCE_REASONS = ['研修', '短時間勤務', 'その他'];
 
 // ─── エントリポイント ───────────────────────────────
 function doGet(e)  { return handle(e.parameter, null); }
@@ -99,6 +102,9 @@ function handle(params, body) {
       case 'getPayQueue':     result = getPayQueue(params);        break;
       case 'savePayments':    result = savePayments(d);            break;
       case 'getUnpaid':       result = getUnpaid();                break;
+      case 'saveAllowance':   result = saveAllowance(d);           break;
+      case 'getAllowances':   result = getAllowances(params);      break;
+      case 'deleteAllowance': result = deleteAllowance(d);         break;
       case 'saveStock':       result = saveStock(d);               break;
       case 'getStocks':       result = getStocks(params);          break;
       case 'deleteStock':     result = deleteStock(d);             break;
@@ -159,6 +165,7 @@ function initSheets() {
     [SH_MENUS,    ['メニュー名','区分','表示順','有効']],
     [SH_STAFF,    ['氏名','インセンティブ対象','表示順','有効']],
     [SH_SETTINGS, ['キー','値']],
+    [SH_ALLOWANCE,['日当ID','日付','氏名','金額','理由','メモ','登録日時']],
     [SH_ARCHIVE,  ['削除日時','シート','内容']]
   ];
   defs.forEach(function (def) {
@@ -186,6 +193,7 @@ function getStartupData() {
     masters: getMasters(),
     payMethods: PAY_METHODS,
     stockUses: STOCK_USES,
+    allowanceReasons: ALLOWANCE_REASONS,
     today: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'),
     month: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM')
   };
@@ -496,6 +504,58 @@ function savePayments(d) {
   });
 }
 
+// ─── 特別な日当（研修・短時間勤務など、5,000円がつかない日）──────
+function saveAllowance(d) {
+  return withLock_(function () {
+    const date = ymd_(d.date);
+    if (!date) throw new Error('日付を入れてください');
+    if (!d.staff) throw new Error('スタッフを選んでください');
+    const amount = Number(d.amount || 0);
+    if (!amount) throw new Error('金額を入れてください');
+    const s = sh(SH_ALLOWANCE);
+    const id = d.id || newId_('A');
+    const row = [id, date, d.staff, amount, d.reason || 'その他', d.memo || '', nowStr_()];
+    if (d.id) {
+      const vals = s.getLastRow() > 1 ? s.getRange(2, 1, s.getLastRow() - 1, 1).getValues() : [];
+      for (let i = 0; i < vals.length; i++) {
+        if (String(vals[i][0]) === String(d.id)) {
+          s.getRange(i + 2, 1, 1, row.length).setValues([row]);
+          return { updated: true, id: id };
+        }
+      }
+      throw new Error('見つかりません');
+    }
+    s.appendRow(row);
+    return { created: true, id: id };
+  });
+}
+
+function getAllowances(params) {
+  const month = params.month || '';
+  return readSheet_(SH_ALLOWANCE).filter(function (r) {
+    const dt = ymd_(r['日付']);
+    return month ? dt.slice(0, 7) === month : true;
+  }).map(function (r) {
+    return { id: r['日当ID'], date: ymd_(r['日付']), staff: r['氏名'],
+             amount: Number(r['金額']) || 0, reason: r['理由'], memo: r['メモ'] };
+  }).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+}
+
+function deleteAllowance(d) {
+  return withLock_(function () {
+    const s = sh(SH_ALLOWANCE);
+    const vals = s.getLastRow() > 1 ? s.getRange(2, 1, s.getLastRow() - 1, s.getLastColumn()).getValues() : [];
+    for (let i = 0; i < vals.length; i++) {
+      if (String(vals[i][0]) === String(d.id)) {
+        sh(SH_ARCHIVE).appendRow([nowStr_(), SH_ALLOWANCE, JSON.stringify(vals[i])]);
+        s.deleteRow(i + 2);
+        return { deleted: true };
+      }
+    }
+    throw new Error('見つかりません');
+  });
+}
+
 // ─── 在庫払出（売上でない持ち出し）──────────────────────
 function saveStock(d) {
   return withLock_(function () {
@@ -597,7 +657,15 @@ function getSummary(month) {
     stockSum[s.use].qty += s.qty; stockSum[s.use].amount += s.amount;
   });
 
+  const allowances = getAllowances({ month: month });
+  const allowanceByStaff = {};
+  allowances.forEach(function (a) {
+    if (!allowanceByStaff[a.staff]) allowanceByStaff[a.staff] = 0;
+    allowanceByStaff[a.staff] += a.amount;
+  });
+
   return { month: month, net: net, gross: gross, unpaid: unpaid,
+           allowances: allowances, allowanceByStaff: allowanceByStaff,
            byDate: byDate, byTax: byTax, byType: byType, byMethod: byMethod,
            byStaff: byStaff, stock: stockSum, count: items.length };
 }

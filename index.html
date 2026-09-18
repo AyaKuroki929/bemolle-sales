@@ -71,8 +71,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <h1>ベモーレ 売上日報</h1>
   <nav>
     <button data-t="pay" class="on">支払入力</button>
-    <button data-t="entry">手入力</button>
     <button data-t="list">一覧・修正</button>
+    <button data-t="allow">日当</button>
     <button data-t="stock">在庫払出</button>
     <button data-t="unpaid">未収</button>
     <button data-t="sum">集計</button>
@@ -96,48 +96,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   </div>
   <div id="payList"></div>
 </section>
-
-<!-- ══ 入力 ══ -->
-<section id="entry">
-  <div class="card">
-    <h2><span id="entryTitle">新しい会計</span><button class="btn ghost sm" id="btnNew">新規に戻す</button></h2>
-    <div class="row">
-      <div><label>日付（過去日もOK）</label><input type="date" id="f_date"></div>
-      <div><label>顧客名</label><input id="f_customer" list="dl_cust" placeholder="お名前"><datalist id="dl_cust"></datalist></div>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <div><label>担当者（施術した人）</label><select id="f_staff"></select></div>
-      <div><label>予約を取った人（折半する時だけ）</label><select id="f_appointer"><option value="">なし</option></select></div>
-    </div>
-    <div style="margin-top:8px"><label>メモ</label><input id="f_memo" placeholder="任意"></div>
-  </div>
-
-  <div class="card">
-    <h2>内容</h2>
-    <div id="items"></div>
-    <div class="row" style="margin-top:6px">
-      <button class="btn sub sm" data-add="施術">＋施術</button>
-      <button class="btn sub sm" data-add="契約">＋契約</button>
-      <button class="btn sub sm" data-add="物販">＋物販</button>
-      <button class="btn sub sm" data-add="定期便">＋定期便</button>
-      <button class="btn sub sm" data-add="その他">＋その他</button>
-      <button class="btn sub sm" data-add="調整">＋調整</button>
-    </div>
-    <div class="tot"><span>税抜合計</span><span id="t_net">¥0</span></div>
-    <div class="tot"><span>税込合計</span><b id="t_gross">¥0</b></div>
-  </div>
-
-  <div class="card">
-    <h2>お支払い<span class="mini">複数に分けてOK・一部後日もOK</span></h2>
-    <div id="pays"></div>
-    <button class="btn sub sm" id="btnAddPay" style="margin-top:6px">＋支払いを足す</button>
-    <div class="tot"><span>支払合計</span><b id="t_pay">¥0</b></div>
-    <div id="payDiff" class="mini"></div>
-  </div>
-
-  <button class="btn wide" id="btnSave">保存する</button>
-</section>
-
 <!-- ══ 一覧・修正 ══ -->
 <section id="list">
   <div class="card">
@@ -149,6 +107,29 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <div class="mini" style="margin-top:6px">過去のどの日でも表示・修正・追加できます</div>
   </div>
   <div id="dayList"></div>
+</section>
+
+<!-- ══ 日当 ══ -->
+<section id="allow">
+  <div class="card">
+    <h2>日当5,000円がつかない日を入れる</h2>
+    <div class="mini" style="margin-bottom:8px">研修や短時間勤務など、タイムカードにメモが入っていて日当が出ない日の金額をここに入れます</div>
+    <div class="row">
+      <div><label>日付</label><input type="date" id="a_date"></div>
+      <div><label>スタッフ</label><select id="a_staff"></select></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div><label>金額</label><input type="number" id="a_amount" placeholder="例：1200"></div>
+      <div><label>理由</label><select id="a_reason"></select></div>
+    </div>
+    <div style="margin-top:8px"><label>メモ</label><input id="a_memo" placeholder="例：プラペン研修2時間（600円×2）"></div>
+    <button class="btn wide" id="btnSaveAllow" style="margin-top:10px">登録する</button>
+  </div>
+  <div class="card">
+    <h2><span id="a_title">今月の分</span><button class="btn ghost sm" id="btnReloadAllow">更新</button></h2>
+    <div class="row"><div><input type="month" id="a_month"></div></div>
+    <div id="allowList" style="margin-top:10px"></div>
+  </div>
 </section>
 
 <!-- ══ 在庫払出 ══ -->
@@ -267,177 +248,11 @@ async function api(action, payload={}, params={}){
 $$('nav button').forEach(b => b.onclick = () => {
   $$('nav button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
   $$('section').forEach(s=>s.classList.remove('on')); $('#'+b.dataset.t).classList.add('on');
+  if(b.dataset.t==='allow') loadAllowances();
   if(b.dataset.t==='stock') loadStocks();
   if(b.dataset.t==='unpaid') loadUnpaid();
   if(b.dataset.t==='conf') renderMasters();
 });
-
-// ─── 明細行 ───
-const KIND_CONTRACT = ['通常契約','ラジショット','部位チケット'];
-function addItem(type, data){
-  const d = data || {};
-  const wrap = document.createElement('div');
-  wrap.className = 'line'; wrap.dataset.type = type;
-  const tagCls = {'施術':'','契約':'c','物販':'p','定期便':'s','その他':'o','調整':'o'}[type]||'o';
-  let body = '';
-  if(type==='施術'){
-    body = `<div class="row">
-      <div style="flex:2"><label>メニュー</label><select class="i_menu">${
-        M.menus.map(m=>`<option value="${esc(m.name)}" data-kind="${esc(m.kind)}" ${d.name===m.name?'selected':''}>${esc(m.name)}</option>`).join('')
-      }</select></div>
-      <div style="flex:0 0 78px"><label>部位数</label><input type="number" class="i_qty" value="${d.qty||1}" min="1"></div>
-      <div><label>金額（税抜）</label><input type="number" class="i_net" value="${d.net||0}" placeholder="回数券なら0"></div>
-    </div>
-    <div class="mini" style="margin-top:4px">回数券の消化は金額0のままでOK（インセンティブは付きます）</div>`;
-  } else if(type==='契約'){
-    body = `<div class="row">
-      <div style="flex:2"><label>コース名</label><input class="i_name" value="${esc(d.name||'')}" placeholder="例：全身12回"></div>
-      <div><label>種類</label><select class="i_kind">${
-        KIND_CONTRACT.map(k=>`<option ${d.kind===k?'selected':''}>${k}</option>`).join('')}</select></div>
-    </div>
-    <div class="row" style="margin-top:6px">
-      <div><label>契約金額（税抜）</label><input type="number" class="i_net" value="${d.net||0}"></div>
-      <div style="flex:0 0 100px"><label>プレゼント回数</label><input type="number" class="i_note" value="${esc(d.note||'')}" placeholder="0"></div>
-    </div>
-    <div class="mini" style="margin-top:4px">ラジショット・部位チケットは5%固定で件数に数えません</div>`;
-  } else if(type==='物販' || type==='定期便'){
-    body = `<div class="row">
-      <div style="flex:2"><label>商品</label><select class="i_prod">${
-        ['<option value="">— 選ぶ —</option>'].concat(M.products.map(p=>
-          `<option value="${esc(p.name)}" data-tax="${p.tax}" data-price="${p.price}" ${d.name===p.name?'selected':''}>${esc(p.name)}（${p.tax}%）</option>`)).join('')
-      }</select></div>
-      <div style="flex:0 0 72px"><label>数量</label><input type="number" class="i_qty" value="${d.qty||1}" min="1"></div>
-      <div><label>金額（税抜）</label><input type="number" class="i_net" value="${d.net||0}"></div>
-    </div>
-    <div class="row" style="margin-top:6px">
-      <div style="flex:0 0 96px"><label>税率</label><select class="i_tax">
-        <option value="8" ${Number(d.tax)===8?'selected':''}>8%</option>
-        <option value="10" ${Number(d.tax)!==8?'selected':''}>10%</option></select></div>
-      ${type==='定期便'?`<div style="flex:0 0 auto;padding-top:18px"><label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink)">
-        <input type="checkbox" class="i_first" style="width:auto" ${d.first?'checked':''}> 初回（インセンティブ対象外）</label></div>`:''}
-    </div>`;
-  } else {
-    body = `<div class="row">
-      <div style="flex:2"><label>名称</label><input class="i_name" value="${esc(d.name||'')}" placeholder="${type==='調整'?'例：解約によるインセン返金':'例：初回料金'}"></div>
-      <div><label>金額（税抜${type==='調整'?'・マイナス可':''}）</label><input type="number" class="i_net" value="${d.net||0}"></div>
-      <div style="flex:0 0 92px"><label>税率</label><select class="i_tax">
-        <option value="8" ${Number(d.tax)===8?'selected':''}>8%</option>
-        <option value="10" ${Number(d.tax)!==8&&Number(d.tax)!==0?'selected':''}>10%</option>
-        <option value="0" ${Number(d.tax)===0?'selected':''}>0%</option></select></div>
-    </div>`;
-  }
-  wrap.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
-      <span class="tag ${tagCls}">${type}</span><button class="del">削除</button></div>${body}`;
-  wrap.querySelector('.del').onclick = () => { wrap.remove(); recalc(); };
-  const prod = wrap.querySelector('.i_prod');
-  if(prod) prod.onchange = () => {
-    const o = prod.selectedOptions[0]; if(!o || !o.value) return;
-    wrap.querySelector('.i_tax').value = o.dataset.tax;
-    const qty = Number(wrap.querySelector('.i_qty').value)||1;
-    wrap.querySelector('.i_net').value = Math.round(Number(o.dataset.price)*qty);
-    recalc();
-  };
-  const qty = wrap.querySelector('.i_qty');
-  if(qty && prod) qty.onchange = () => { if(prod.value) prod.onchange(); };
-  wrap.querySelectorAll('input,select').forEach(el => el.addEventListener('change', recalc));
-  $('#items').appendChild(wrap);
-  recalc();
-}
-$$('[data-add]').forEach(b => b.onclick = () => addItem(b.dataset.add));
-
-function readItems(){
-  return $$('#items .line').map(w => {
-    const type = w.dataset.type;
-    const net = Number(w.querySelector('.i_net')?.value||0);
-    if(type==='施術'){
-      const sel = w.querySelector('.i_menu');
-      const o = sel.selectedOptions[0];
-      return { type, name: sel.value, kind: o?o.dataset.kind:'対象外',
-               qty: Number(w.querySelector('.i_qty').value)||1, tax:10, net };
-    }
-    if(type==='契約'){
-      return { type, name: w.querySelector('.i_name').value, kind: w.querySelector('.i_kind').value,
-               qty:1, tax:10, net, note: w.querySelector('.i_note').value };
-    }
-    if(type==='物販'||type==='定期便'){
-      return { type, name: w.querySelector('.i_prod').value, kind: type,
-               qty: Number(w.querySelector('.i_qty').value)||1,
-               tax: Number(w.querySelector('.i_tax').value), net,
-               first: !!w.querySelector('.i_first')?.checked };
-    }
-    return { type, name: w.querySelector('.i_name').value, kind:'対象外', qty:1,
-             tax: Number(w.querySelector('.i_tax').value), net };
-  }).filter(i => i.name);
-}
-
-// ─── 支払行 ───
-function addPay(data){
-  const d = data || {};
-  const w = document.createElement('div');
-  w.className = 'line';
-  w.innerHTML = `<div class="row">
-    <div><label>方法</label><select class="p_method">${
-      PAY_METHODS.map(m=>`<option ${d.method===m?'selected':''}>${m}</option>`).join('')}</select></div>
-    <div><label>金額（税込）</label><input type="number" class="p_amount" value="${d.amount||''}"></div>
-    <div style="flex:0 0 auto;padding-top:18px"><label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink)">
-      <input type="checkbox" class="p_later" style="width:auto" ${d.status==='未収'?'checked':''}> 後日</label></div>
-    <div style="flex:0 0 auto;padding-top:14px"><button class="del">削除</button></div>
-  </div>`;
-  w.querySelector('.del').onclick = () => { w.remove(); recalc(); };
-  w.querySelectorAll('input,select').forEach(el => el.addEventListener('input', recalc));
-  $('#pays').appendChild(w);
-  recalc();
-}
-$('#btnAddPay').onclick = () => addPay();
-function readPays(){
-  return $$('#pays .line').map(w => ({
-    method: w.querySelector('.p_method').value,
-    amount: Number(w.querySelector('.p_amount').value||0),
-    status: w.querySelector('.p_later').checked ? '未収' : '入金済'
-  })).filter(p => p.amount);
-}
-
-function recalc(){
-  const items = readItems();
-  let net=0, gross=0;
-  items.forEach(i => { net += i.net; gross += Math.round(i.net*(1+i.tax/100)); });
-  $('#t_net').textContent = yen(net);
-  $('#t_gross').textContent = yen(gross);
-  const pay = readPays().reduce((a,p)=>a+p.amount,0);
-  $('#t_pay').textContent = yen(pay);
-  const diff = gross - pay;
-  $('#payDiff').innerHTML = (gross===0 && pay===0) ? '<span class="mini">回数券の消化だけなら支払いは空でOK</span>'
-    : (diff===0 ? '<span class="ok">✓ 合計と一致しています</span>'
-      : `<span class="ng">差額 ${yen(diff)}（${diff>0?'支払いが不足':'支払いが多い'}）</span>`);
-}
-
-// ─── 保存 ───
-$('#btnSave').onclick = async () => {
-  const btn = $('#btnSave');
-  const payload = {
-    id: editing || '', createdAt,
-    date: $('#f_date').value, customer: $('#f_customer').value.trim(),
-    staff: $('#f_staff').value, appointer: $('#f_appointer').value,
-    memo: $('#f_memo').value.trim(), items: readItems(), payments: readPays()
-  };
-  if(!payload.items.length) return toast('内容を1つ以上入れてください');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 保存中';
-  try{
-    await api('saveSale', payload);
-    toast(editing ? '修正しました' : '保存しました');
-    resetForm();
-  }catch(e){ toast('保存できません：' + e.message, 4000); }
-  btn.disabled = false; btn.textContent = '保存する';
-};
-
-function resetForm(){
-  editing = null; createdAt = '';
-  $('#entryTitle').textContent = '新しい会計';
-  $('#f_customer').value=''; $('#f_memo').value=''; $('#f_appointer').value='';
-  $('#items').innerHTML=''; $('#pays').innerHTML='';
-  recalc();
-}
-$('#btnNew').onclick = resetForm;
 
 // ─── 一覧・修正 ───
 $('#btnLoadDay').onclick = loadDay;
@@ -449,7 +264,7 @@ async function loadDay(){
     const sales = await api('getSales', {}, { date });
     if(!sales.length){
       $('#dayList').innerHTML = `<div class="card"><div class="mini">この日の記録はまだありません</div>
-        <button class="btn sm sub" style="margin-top:8px" onclick="newOn('${date}')">この日に入力する</button></div>`;
+        </div>`;
       return;
     }
     let net=0, gross=0;
@@ -467,35 +282,14 @@ async function loadDay(){
         <div style="margin-top:6px">${items}</div>
         <div style="margin-top:6px">${pays}</div>
         ${s.memo?`<div class="mini" style="margin-top:4px">📝 ${esc(s.memo)}</div>`:''}
-        <div style="margin-top:8px;display:flex;gap:6px">
-          <button class="btn sub sm" onclick="editSale('${s.id}')">修正</button>
-          <button class="btn ghost sm" onclick="removeSale('${s.id}')">削除</button></div>
+        <div style="margin-top:8px"><button class="btn ghost sm" onclick="removeSale('${s.id}')">削除</button></div>
       </div>`;
     }).join('');
     $('#dayList').innerHTML = `<div class="card"><h2>${date} の合計</h2>
       <div class="tot"><span>税抜</span><span>${yen(net)}</span></div>
       <div class="tot"><span>税込</span><b>${yen(gross)}</b></div>
-      <button class="btn sm sub" style="margin-top:8px" onclick="newOn('${date}')">この日に追加する</button></div>` + html;
+      </div>` + html;
   }catch(e){ $('#dayList').innerHTML = `<div class="card ng">${esc(e.message)}</div>`; }
-}
-function newOn(date){
-  resetForm(); $('#f_date').value = date;
-  $$('nav button')[0].click(); toast(date + ' で入力します');
-}
-async function editSale(id){
-  try{
-    const s = await api('getSale', {}, { id });
-    resetForm();
-    editing = s.id; createdAt = s.createdAt;
-    $('#entryTitle').textContent = '修正：' + s.date + ' ' + (s.customer||'');
-    $('#f_date').value = s.date; $('#f_customer').value = s.customer||'';
-    $('#f_staff').value = s.staff; $('#f_appointer').value = s.appointer||'';
-    $('#f_memo').value = s.memo||'';
-    s.items.forEach(i => addItem(i.type, i));
-    s.payments.forEach(p => addPay(p));
-    recalc();
-    $$('nav button')[0].click();
-  }catch(e){ toast(e.message); }
 }
 async function removeSale(id){
   const pin = prompt('削除するには管理者PINを入れてください');
@@ -745,6 +539,37 @@ async function saveSplit(i){
   catch(e){ toast(e.message); }
 }
 
+// ─── 日当 ───
+$('#btnSaveAllow').onclick = async () => {
+  const d = { date:$('#a_date').value, staff:$('#a_staff').value,
+              amount:Number($('#a_amount').value)||0, reason:$('#a_reason').value,
+              memo:$('#a_memo').value.trim() };
+  if(!d.amount) return toast('金額を入れてください');
+  try{ await api('saveAllowance', d); toast('登録しました');
+    $('#a_amount').value=''; $('#a_memo').value=''; loadAllowances();
+  }catch(e){ toast(e.message); }
+};
+$('#btnReloadAllow').onclick = loadAllowances;
+$('#a_month').onchange = loadAllowances;
+async function loadAllowances(){
+  const month = $('#a_month').value;
+  try{
+    const rows = await api('getAllowances', {}, month?{month}:{});
+    if(!rows.length){ $('#allowList').innerHTML='<div class="mini">まだありません</div>'; return; }
+    const sum = rows.reduce((a,r)=>a+r.amount,0);
+    $('#allowList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th class="n">金額</th><th>理由</th><th></th></tr>`
+      + rows.map(r=>`<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.staff)}</td>
+        <td class="n">${yen(r.amount)}</td><td>${esc(r.reason)}${r.memo?'<br><span class="mini">'+esc(r.memo)+'</span>':''}</td>
+        <td><button class="del" onclick="removeAllowance('${r.id}')">削除</button></td></tr>`).join('')
+      + `<tr><td colspan="2"><b>合計</b></td><td class="n"><b>${yen(sum)}</b></td><td colspan="2"></td></tr></table>`;
+  }catch(e){ $('#allowList').innerHTML=`<div class="ng">${esc(e.message)}</div>`; }
+}
+async function removeAllowance(id){
+  if(!confirm('削除しますか')) return;
+  try{ await api('deleteAllowance',{id}); toast('削除しました'); loadAllowances(); }
+  catch(e){ toast(e.message); }
+}
+
 // ─── 起動 ───
 async function boot(silent){
   if(!getPin()) await askPin();
@@ -755,15 +580,18 @@ async function boot(silent){
     $('#f_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
     $('#f_appointer').innerHTML = '<option value="">なし</option>' + M.staff.map(s=>opt(s.name)).join('');
     $('#k_use').innerHTML = STOCK_USES.map(opt).join('');
+    if(M.staff.length && $('#a_staff')) $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
     $('#dl_prod').innerHTML = M.products.map(p=>`<option value="${esc(p.name)}">`).join('');
     if(!silent){
-      $('#f_date').value = d.today; $('#l_date').value = d.today;
+      $('#l_date').value = d.today;
       $('#k_date').value = d.today; $('#s_month').value = d.month; $('#p_month').value = d.month;
-      addPay();
+      $('#a_date').value = d.today; $('#a_month').value = d.month;
+      $('#a_reason').innerHTML = (d.allowanceReasons||['研修','短時間勤務','その他']).map(opt).join('');
+      $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
     }
   }catch(e){ if(!silent) toast('接続できません：' + e.message, 5000); }
 }
-boot();
+boot().then(()=>{ if(getPin()) loadPayQueue(); });
 setInterval(() => api('keepWarm').catch(()=>{}), 5*60*1000);
 </script>
 </body>
