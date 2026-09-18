@@ -439,16 +439,26 @@ async function loadPayQueue(){
 }
 async function quickPay(i, method){
   const s=PAYQ[i];
+  if(s.payState==='入力済') return;
+  // 先に画面を確定させて、保存は裏で走らせる（待たせない）
+  s.payState='入力済';
+  const card=$('#pc_'+i);
+  card.style.opacity='.55';
+  card.querySelectorAll('button').forEach(b=>b.remove());
+  card.insertAdjacentHTML('beforeend',
+    `<div style="margin-top:8px" id="ck_${i}"><span class="chip">${esc(method)} ${yen(s.gross)}</span> <span class="ok">✓</span></div>`);
+  const rest=PAYQ.filter(x=>x.payState!=='入力済').length;
+  $('#p_count').textContent=`${PAYQ.length}件 / 未入力 ${rest}件`;
+  if(rest===0) toast('この月は全部入りました 🎉', 2500);
   try{
     await api('savePayments', { id:s.id, payments:[{method, amount:s.gross, status:'入金済'}] });
-    const card=$('#pc_'+i); card.style.opacity='.55';
-    card.querySelectorAll('button').forEach(b=>b.remove());
-    card.insertAdjacentHTML('beforeend', `<div style="margin-top:8px"><span class="chip">${esc(method)} ${yen(s.gross)}</span> <span class="ok">✓</span></div>`);
-    s.payState='入力済';
-    const rest=PAYQ.filter(x=>x.payState!=='入力済').length;
-    $('#p_count').textContent=`${PAYQ.length}件 / 未入力 ${rest}件`;
-    toast(`${s.customer} ${method} ${yen(s.gross)}`, 1200);
-  }catch(e){ toast(e.message); }
+  }catch(e){
+    s.payState='未入力';
+    card.style.opacity='1';
+    const ck=$('#ck_'+i); if(ck) ck.innerHTML=`<span class="ng">保存できませんでした：${esc(e.message)}</span>
+      <button class="btn sm" onclick="loadPayQueue()">やり直す</button>`;
+    toast('保存できませんでした', 3000);
+  }
 }
 function openSplit(i){
   const s=PAYQ[i], box=$('#sp_'+i);
