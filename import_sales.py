@@ -4,7 +4,7 @@
   python3 import_sales.py <物販CSV> <サービス契約CSV> [--dry]   … 手作業で分けた場合
 会計（日付＋顧客でまとめる）と明細を作る。入金は空のまま＝彩さんが画面で支払方法を入れる。
 """
-import csv, json, sys, os, urllib.request, urllib.parse, datetime, collections
+import csv, json, sys, os, re, unicodedata, urllib.request, urllib.parse, datetime, collections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN = os.path.expanduser('~/.google_drive_token.json')
@@ -22,8 +22,44 @@ def api(url, at, method='GET', body=None):
                                  headers={'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json'})
     return json.load(urllib.request.urlopen(req))
 
-PRODUCTS = {p['名称']: p for p in json.load(open(os.path.join(HERE, 'products.json'), encoding='utf-8'))['商品']}
-PRODUCTS.setdefault('ボンバー', {'単価': 8000, '税率': 8})
+def keyname(s):
+    """商品名の照合用。うらかたさんは「クレアスキンクリーム」、マスタは「クレアスキン クリーム」の
+    ようにスペースの有無が揃っていないので、スペースと全角半角をそろえてから突き合わせる"""
+    return re.sub(r'[\s　]+', '', unicodedata.normalize('NFKC', str(s)))
+
+# 起動時は products.json。スプレッドシートの商品マスタが読めたらそちらで置き換える
+_RAW = json.load(open(os.path.join(HERE, 'products.json'), encoding='utf-8'))['商品']
+PRODUCTS = {keyname(p['名称']): p for p in _RAW}
+PRODUCTS.setdefault(keyname('ボンバー'), {'単価': 8000, '税率': 8})
+
+
+def load_master(ssid, at):
+    """商品マスタ（商品名・税率・税抜単価）を大元にする。彩さんが設定タブで足した商品が
+    その晩から効くようにするため。読めなければ products.json のまま続ける"""
+    try:
+        v = read(ssid, at, '商品マスタ')
+    except Exception as e:
+        print(f'⚠️ 商品マスタが読めませんでした（{e}）。products.json で続けます')
+        return
+    got = {}
+    for r in v:
+        r = pad(r, 7)
+        if not str(r[0]).strip():
+            continue
+        if str(r[6]).upper() == 'FALSE':          # 有効=FALSE は使わない
+            continue
+        got[keyname(r[0])] = {'名称': r[0], '税率': int(r[1] or 10), '単価': int(r[2] or 0),
+                              'ブランド': r[4]}
+    if not got:
+        print('⚠️ 商品マスタが空でした。products.json で続けます')
+        return
+    PRODUCTS.clear()
+    PRODUCTS.update(got)
+    print(f'商品マスタ {len(got)}件を読みました')
+
+
+def product(name):
+    return PRODUCTS.get(keyname(name), {})
 
 def kubun(name):
     if 'セルマン' in name: return 'セルマン'
@@ -39,7 +75,7 @@ def load_unified(path):
         amt, qty = int(r['金額'] or 0), int(r['数量'] or 1)
         d, name, ku = r['日付'], r['名称'], r['区分']
         if ku == '物販':
-            p = PRODUCTS.get(name, {})
+            p = product(name)
             tanka, tax = p.get('単価'), p.get('税率', 10)
             teiki = d.endswith('/01') and tanka and amt == round(tanka * qty * 0.9)
             items.append({'日付': d, '顧客': r['顧客'], 'スタッフ': r['スタッフ'],
@@ -63,7 +99,7 @@ def load(bussan_csv, sc_csv):
     items = []
     for r in csv.DictReader(open(bussan_csv, encoding='utf-8-sig')):
         amt, qty = int(r['金額'] or 0), int(r['数量'] or 1)
-        p = PRODUCTS.get(r['商品'], {})
+        p = product(r['商品'])
         tanka, tax = p.get('単価'), p.get('税率', 10)
         # 定期便＝日付が1日 かつ 定価×数量の90%ちょうど
         teiki = r['日付'].endswith('/01') and tanka and amt == round(tanka * qty * 0.9)
@@ -89,6 +125,9 @@ def pad(row, n):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     dry = '--dry' in sys.argv
+    at = access_token()
+    ssid = os.environ.get('SHEET_ID') or open(os.path.join(HERE, 'sheet_id.txt')).read().strip()
+    load_master(ssid, at)                      # 税率と定価は商品マスタを大元にする
     if len(args) == 1:
         items = load_unified(args[0])          # うらかたさんから自動取得した1本のCSV
     else:
@@ -102,8 +141,6 @@ def main():
         print('CSVが空です。何も書き換えません'); return
     print('入れ替える月:', ', '.join(months))
 
-    at = access_token()
-    ssid = os.environ.get('SHEET_ID') or open(os.path.join(HERE, 'sheet_id.txt')).read().strip()
     old_sales = [pad(r, 11) for r in read(ssid, at, '会計')  if r and r[0]]
     old_det   = [pad(r, 13) for r in read(ssid, at, '明細')  if r and r[0]]
     paid_ids  = {r[1] for r in read(ssid, at, '入金') if len(r) > 1 and r[1]}

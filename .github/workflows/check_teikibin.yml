@@ -1,0 +1,44 @@
+name: 定期便の答え合わせ
+
+on:
+  schedule:
+    - cron: '0 15 1 * *'      # 毎月2日 0:00 JST（定期便は1日に上がるので、翌日の0時に照合）
+  workflow_dispatch:
+    inputs:
+      month:
+        description: '照合する月（例 2026-09）。空なら今月'
+        required: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 月を決める
+        id: m
+        run: |
+          M="${{ github.event.inputs.month }}"
+          if [ -z "$M" ]; then M=$(TZ=Asia/Tokyo date +%Y-%m); fi
+          echo "month=$M" >> $GITHUB_OUTPUT
+          echo "照合する月: $M"
+
+      - name: うらかたさんとサブスク個数把握を突き合わせる
+        env:
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: |
+          set -o pipefail
+          python3 check_teikibin.py "${{ steps.m.outputs.month }}" | tee out.txt
+
+      # 合っていれば無音。食い違ったときだけ知らせる
+      - name: 食い違いをLINEで知らせる
+        if: failure()
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 notify_line.py "🚨 定期便の答え合わせで食い違いがありました"
