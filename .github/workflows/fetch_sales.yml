@@ -52,7 +52,7 @@ jobs:
           path: out/*.png
           if-no-files-found: ignore
 
-      - name: 失敗したらLINEで知らせる
+      - name: 失敗・要確認のときLINEで知らせる
         if: failure()
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
@@ -61,5 +61,5 @@ jobs:
             curl -s -X POST https://api.line.me/v2/bot/message/broadcast \
               -H "Authorization: Bearer $LINE_TOKEN" \
               -H "Content-Type: application/json" \
-              -d "{\"messages\":[{\"type\":\"text\",\"text\":\"🚨 うらかたさんの売上取り込みが失敗しました\\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}]}"
+              -d "{\"messages\":[{\"type\":\"text\",\"text\":\"🚨 うらかたさんの売上取り込み：取り込めなかったか、支払済みの金額が変わって要確認になりました\\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}]}"
           fi

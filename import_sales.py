@@ -78,6 +78,14 @@ def load(bussan_csv, sc_csv):
                       '税率': 10, '税抜': int(r['金額'] or 0), '備考': ''})
     return items
 
+def read(ssid, at, name):
+    u = (f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/'
+         + urllib.parse.quote(f"'{name}'!A2:Z"))
+    return api(u, at).get('values', [])
+
+def pad(row, n):
+    return (row + [''] * n)[:n]
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     dry = '--dry' in sys.argv
@@ -89,37 +97,84 @@ def main():
     for it in sorted(items, key=lambda x: (x['日付'], x['顧客'])):
         groups.setdefault((it['日付'], it['顧客']), []).append(it)
 
+    months = sorted({it['日付'].replace('/', '-')[:7] for it in items})
+    if not months:
+        print('CSVが空です。何も書き換えません'); return
+    print('入れ替える月:', ', '.join(months))
+
+    at = access_token()
+    ssid = os.environ.get('SHEET_ID') or open(os.path.join(HERE, 'sheet_id.txt')).read().strip()
+    old_sales = [pad(r, 11) for r in read(ssid, at, '会計')  if r and r[0]]
+    old_det   = [pad(r, 13) for r in read(ssid, at, '明細')  if r and r[0]]
+    paid_ids  = {r[1] for r in read(ssid, at, '入金') if len(r) > 1 and r[1]}
+
+    # 今回入れ替える月の既存行＝会計IDと彩さんが入れた列を引き継ぐための材料
+    target   = lambda d: d[:7] in months
+    keep_s   = [r for r in old_sales if not target(r[1])]
+    keep_d   = [r for r in old_det   if not target(r[2])]
+    prev     = {(r[1], r[2]): r for r in old_sales if target(r[1])}
+    used_seq = collections.Counter()
+    for r in old_sales:
+        if r[0].startswith('S') and len(r[0]) >= 12:
+            used_seq[r[0][1:9]] = max(used_seq[r[0][1:9]], int(r[0][9:12] or 0))
+
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    sales, details = [], []
-    for n, ((d, cust), its) in enumerate(groups.items(), 1):
-        sid = 'S' + d.replace('/', '') + f'{n:03d}'
+    sales, details, changed, added, total = [], [], [], 0, 0
+    for (d, cust), its in groups.items():
+        d = d.replace('/', '-')
         net = sum(i['税抜'] for i in its)
         gross = sum(round(i['税抜'] * (1 + i['税率'] / 100)) for i in its)
         staff = collections.Counter(i['スタッフ'] for i in its if i['スタッフ']).most_common(1)
-        sales.append([sid, d.replace('/', '-'), cust, staff[0][0] if staff else '', '', '',
-                      net, gross, '未入力' if gross else '支払なし', now, now])
+        o = prev.pop((d, cust), None)
+        if o:
+            sid, apo, memo, made, state = o[0], o[4], o[5], o[9], o[8]
+            # 金額が変わったのに支払が入っている＝黙って食い違わせない
+            if sid in paid_ids and str(o[7]) != str(gross):
+                state, _ = '要確認', changed.append(f'{d} {cust} 税込{o[7]}→{gross}')
+        else:
+            used_seq[d.replace('-', '')] += 1
+            sid = 'S' + d.replace('-', '') + f'{used_seq[d.replace("-", "")]:03d}'
+            apo, memo, made, state = '', '', now, '未入力' if gross else '支払なし'
+            added += 1
+        sales.append([sid, d, cust, staff[0][0] if staff else '', apo, memo, net, gross, state, made, now])
+        total += net
         for m, i in enumerate(its, 1):
-            details.append([f'{sid}-{m:02d}', sid, d.replace('/', '-'), i['種別'], i['名称'], i['数量'],
+            details.append([f'{sid}-{m:02d}', sid, d, i['種別'], i['名称'], i['数量'],
                             i['区分'], i['税率'], i['税抜'], round(i['税抜'] * (1 + i['税率'] / 100)),
                             i['スタッフ'], False, i['備考']])
 
-    print(f'会計 {len(sales)}件 / 明細 {len(details)}件 / 税抜合計 {sum(s[6] for s in sales):,}円')
-    byk = collections.Counter(d[3] for d in details)
-    print('種別:', dict(byk))
+    # うらかたさんから消えたのに支払が入っている会計は消さずに残す
+    for key, o in prev.items():
+        if o[0] in paid_ids:
+            o[8] = '要確認'; sales.append(o)
+            changed.append(f'{key[0]} {key[1]} うらかたさんから消えたが入金あり')
+            details += [r for r in old_det if r[1] == o[0]]
+
+    sales.sort(key=lambda r: (r[1], r[0]))
+    details.sort(key=lambda r: (r[2], r[0]))
+    allsales, alldet = keep_s + sales, keep_d + details
+    allsales.sort(key=lambda r: (r[1], r[0]))
+    alldet.sort(key=lambda r: (r[2], r[0]))
+
+    print(f'今回の月: 会計 {len(sales)}件（新規 {added}件）/ 明細 {len(details)}件 '
+          f'/ 税抜合計 {total:,}円')
+    print(f'他の月をそのまま残す: 会計 {len(keep_s)}件 / 明細 {len(keep_d)}件')
+    print('種別:', dict(collections.Counter(d[3] for d in details)))
+    for c in changed: print('  ⚠️ 要確認:', c)
     if dry:
         for s in sales[:5]: print('  ', s[:5], s[6:9])
         return
-    at = access_token()
-    sid_file = os.path.join(HERE, 'sheet_id.txt')
-    ssid = os.environ.get('SHEET_ID') or open(sid_file).read().strip()
-    api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/' +
-        urllib.parse.quote("'会計'!A2:Z") + ':clear', at, 'POST', {})
-    api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/' +
-        urllib.parse.quote("'明細'!A2:Z") + ':clear', at, 'POST', {})
+    for name in ['会計', '明細']:
+        api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/' +
+            urllib.parse.quote(f"'{name}'!A2:Z") + ':clear', at, 'POST', {})
     api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values:batchUpdate', at, 'POST',
         {'valueInputOption': 'RAW',
-         'data': [{'range': "'会計'!A2", 'values': sales}, {'range': "'明細'!A2", 'values': details}]})
-    print('取り込みました: https://docs.google.com/spreadsheets/d/' + ssid + '/edit')
+         'data': [{'range': "'会計'!A2", 'values': allsales},
+                  {'range': "'明細'!A2", 'values': alldet}]})
+    print(f'書き込みました 会計{len(allsales)}件 / 明細{len(alldet)}件: '
+          'https://docs.google.com/spreadsheets/d/' + ssid + '/edit')
+    if changed:
+        sys.exit(9)   # 要確認が出たら失敗扱い＝LINEに飛ばす
 
 if __name__ == '__main__':
     main()
