@@ -96,3 +96,22 @@
 
 集計タブで **日当 ＋ 特別日当 ＋ インセンティブ ＝ 支給合計** が1枚で出る。
 タイムカードが読めない月は日当0で表示し、画面は止めない。
+
+## 毎晩の自動取り込み（PCを開かなくても動く）
+
+`.github/workflows/fetch_sales.yml` が毎日22:00 JSTに動き、うらかたさんにログインして
+当月の売上を取り、スプレッドシートに入れる。朝はiPadで開いて支払方法を押すだけ。
+
+必要なSecrets（GitHubのリポジトリ設定 → Secrets and variables → Actions）:
+| 名前 | 中身 |
+|---|---|
+| URAKATA_EMAIL | うらかたさんのログインメール |
+| URAKATA_PASSWORD | うらかたさんのパスワード |
+| GOOGLE_TOKEN | `~/.google_drive_token.json` の中身をそのまま |
+| SHEET_ID | 売上日報スプレッドシートのID |
+| LINE_CHANNEL_ACCESS_TOKEN | Claude通知Bot（失敗時の連絡用・任意） |
+
+失敗したらLINEに🚨が飛び、そのときの画面がArtifactに残る。
+手動で動かすときは Actions タブ → このワークフロー → Run workflow（月を指定できる）。
+
+⚠️ うらかたさんがBubbleからコードへ移行したら、`fetch_urakata.py` の画面の読み方は作り直しになる。

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """うらかたさんから抜いたCSVを、売上日報のスプレッドシートに取り込む。
-  python3 import_sales.py <物販CSV> <サービス契約CSV> [--dry]
+  python3 import_sales.py <まとめCSV> [--dry]                  … fetch_urakata.py の出力
+  python3 import_sales.py <物販CSV> <サービス契約CSV> [--dry]   … 手作業で分けた場合
 会計（日付＋顧客でまとめる）と明細を作る。入金は空のまま＝彩さんが画面で支払方法を入れる。
 """
 import csv, json, sys, os, urllib.request, urllib.parse, datetime, collections
@@ -9,7 +10,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN = os.path.expanduser('~/.google_drive_token.json')
 
 def access_token():
-    t = json.load(open(TOKEN))
+    raw = os.environ.get('GOOGLE_TOKEN')
+    t = json.loads(raw) if raw else json.load(open(TOKEN))
     d = urllib.parse.urlencode({'client_id': t['client_id'], 'client_secret': t['client_secret'],
                                 'refresh_token': t['refresh_token'], 'grant_type': 'refresh_token'}).encode()
     return json.load(urllib.request.urlopen('https://oauth2.googleapis.com/token', d))['access_token']
@@ -29,6 +31,33 @@ def kubun(name):
     if '幹細胞' in name or 'プラペン' in name: return 'プラペン'
     if '全身' in name: return '全身'
     return '対象外'
+
+def load_unified(path):
+    """fetch_urakata.py が書き出した1本のCSVを読む（区分＝物販/サービス/コース）"""
+    items = []
+    for r in csv.DictReader(open(path, encoding='utf-8-sig')):
+        amt, qty = int(r['金額'] or 0), int(r['数量'] or 1)
+        d, name, ku = r['日付'], r['名称'], r['区分']
+        if ku == '物販':
+            p = PRODUCTS.get(name, {})
+            tanka, tax = p.get('単価'), p.get('税率', 10)
+            teiki = d.endswith('/01') and tanka and amt == round(tanka * qty * 0.9)
+            items.append({'日付': d, '顧客': r['顧客'], 'スタッフ': r['スタッフ'],
+                          '種別': '定期便' if teiki else '物販', '名称': name, '数量': qty,
+                          '区分': '定期便' if teiki else '物販', '税率': tax, '税抜': amt,
+                          '備考': r.get('メモ', '')})
+        elif ku == 'サービス':
+            items.append({'日付': d, '顧客': r['顧客'], 'スタッフ': r['スタッフ'],
+                          '種別': '施術', '名称': name, '数量': 1, '区分': kubun(name),
+                          '税率': 10, '税抜': amt, '備考': r.get('メモ', '')})
+        else:  # コース
+            shouka = r.get('状態') == '消化'
+            items.append({'日付': d, '顧客': r['顧客'], 'スタッフ': r['スタッフ'],
+                          '種別': '施術' if shouka else '契約', '名称': name, '数量': 1,
+                          '区分': kubun(name) if shouka else '通常契約',
+                          '税率': 10, '税抜': amt, '備考': r.get('メモ', '')})
+    return items
+
 
 def load(bussan_csv, sc_csv):
     items = []
@@ -52,7 +81,10 @@ def load(bussan_csv, sc_csv):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     dry = '--dry' in sys.argv
-    items = load(args[0], args[1])
+    if len(args) == 1:
+        items = load_unified(args[0])          # うらかたさんから自動取得した1本のCSV
+    else:
+        items = load(args[0], args[1])         # 手作業で分けた2本のCSV
     groups = collections.OrderedDict()
     for it in sorted(items, key=lambda x: (x['日付'], x['顧客'])):
         groups.setdefault((it['日付'], it['顧客']), []).append(it)
@@ -79,7 +111,7 @@ def main():
         return
     at = access_token()
     sid_file = os.path.join(HERE, 'sheet_id.txt')
-    ssid = open(sid_file).read().strip()
+    ssid = os.environ.get('SHEET_ID') or open(sid_file).read().strip()
     api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/' +
         urllib.parse.quote("'会計'!A2:Z") + ':clear', at, 'POST', {})
     api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/' +

@@ -1,0 +1,65 @@
+name: うらかたさんの売上を取り込む
+
+on:
+  schedule:
+    - cron: '0 13 * * *'      # 毎日22:00 JST（営業終了後）
+  workflow_dispatch:
+    inputs:
+      month:
+        description: '取り込む月（例 2026-08）。空なら今月'
+        required: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Playwrightを入れる
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: 月を決める
+        id: m
+        run: |
+          M="${{ github.event.inputs.month }}"
+          if [ -z "$M" ]; then M=$(TZ=Asia/Tokyo date +%Y-%m); fi
+          echo "month=$M" >> $GITHUB_OUTPUT
+          echo "取り込む月: $M"
+
+      - name: うらかたさんから取ってくる
+        env:
+          URAKATA_EMAIL: ${{ secrets.URAKATA_EMAIL }}
+          URAKATA_PASSWORD: ${{ secrets.URAKATA_PASSWORD }}
+        run: python3 fetch_urakata.py "${{ steps.m.outputs.month }}" out
+
+      - name: スプレッドシートに入れる
+        env:
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: python3 import_sales.py "out/urakata_${{ steps.m.outputs.month }}.csv"
+
+      - name: 失敗したときの画面を残す
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 失敗時のスクリーンショット
+          path: out/*.png
+          if-no-files-found: ignore
+
+      - name: 失敗したらLINEで知らせる
+        if: failure()
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: |
+          if [ -n "$LINE_TOKEN" ]; then
+            curl -s -X POST https://api.line.me/v2/bot/message/broadcast \
+              -H "Authorization: Bearer $LINE_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"messages\":[{\"type\":\"text\",\"text\":\"🚨 うらかたさんの売上取り込みが失敗しました\\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}]}"
+          fi
