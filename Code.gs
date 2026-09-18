@@ -706,6 +706,35 @@ function getIncentive(month) {
   };
   targets.forEach(ensure);
 
+  // ①-0 プリペイドの消化には施術名が入らない。同じお客様・同じ日・同じ担当で
+  //      半身の消化があれば、2行あわせて全身1回として数える（2026-09-18 彩さん決定）
+  const custKey = function (r) {
+    const head = saleById[String(r['会計ID'])] || {};
+    return (r['担当者'] || '') + '|' + ymd_(r['日付']) + '|' + (head['顧客名'] || '');
+  };
+  items.forEach(function (p) {
+    if (p['種別'] !== '施術' || TREAT_RULES[p['区分']]) return;
+    if (String(p['名称']).indexOf('プリペイド') === -1) return;
+    const key = custKey(p);
+    let mate = null;
+    items.forEach(function (r) {
+      if (mate || r === p || r['種別'] !== '施術' || r['区分'] !== '半身') return;
+      if (r.__prepaidMerged) return;
+      if (custKey(r) === key) mate = r;
+    });
+    if (mate) {
+      mate['区分'] = '全身';
+      mate.__prepaidMerged = true;
+    } else if (targets.indexOf(p['担当者'] || '') !== -1) {
+      // 相手が見つからない＝施術の種類が分からない。黙って0にせず画面に出す
+      ensure(p['担当者']).detail.push({
+        date: ymd_(p['日付']),
+        label: p['名称'] + '（半身の消化が見つからないため要確認・0円）',
+        amount: 0
+      });
+    }
+  });
+
   // ① 施術インセンティブ（1日あたり上限件数を適用 → 折半）
   const treats = items.filter(function (r) { return r['種別'] === '施術' && TREAT_RULES[r['区分']]; });
   const groups = {};
