@@ -48,6 +48,9 @@ input:focus,select:focus{outline:2px solid var(--rose);outline-offset:-1px}
 .tot{display:flex;justify-content:space-between;padding:7px 0;border-top:1px dashed var(--line);font-size:14px}
 .tot b{font-size:17px}
 .mini{font-size:12px;color:var(--sub)}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
 .chip{display:inline-block;background:#f2ece7;border-radius:20px;padding:3px 10px;font-size:12px;margin:2px 3px 2px 0}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left}
@@ -118,11 +121,9 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
       <div><label>日付</label><input type="date" id="a_date"></div>
       <div><label>スタッフ</label><select id="a_staff"></select></div>
     </div>
-    <div class="row" style="margin-top:8px">
-      <div><label>金額</label><input type="number" id="a_amount" placeholder="例：1200"></div>
-      <div><label>理由</label><select id="a_reason"></select></div>
-    </div>
-    <div style="margin-top:8px"><label>メモ</label><input id="a_memo" placeholder="例：プラペン研修2時間（600円×2）"></div>
+    <div style="margin-top:8px"><label>金額</label>
+      <input type="text" inputmode="numeric" id="a_amount" placeholder="例：1200"></div>
+    <div style="margin-top:8px"><label>メモ（理由をここに書く）</label><input id="a_memo" placeholder="例：プラペン研修2時間（600円×2）"></div>
     <button class="btn wide" id="btnSaveAllow" style="margin-top:10px">登録する</button>
   </div>
   <div class="card">
@@ -542,7 +543,7 @@ async function saveSplit(i){
 // ─── 日当 ───
 $('#btnSaveAllow').onclick = async () => {
   const d = { date:$('#a_date').value, staff:$('#a_staff').value,
-              amount:Number($('#a_amount').value)||0, reason:$('#a_reason').value,
+              amount:Number(String($('#a_amount').value).replace(/[^0-9-]/g,''))||0,
               memo:$('#a_memo').value.trim() };
   if(!d.amount) return toast('金額を入れてください');
   try{ await api('saveAllowance', d); toast('登録しました');
@@ -557,9 +558,9 @@ async function loadAllowances(){
     const rows = await api('getAllowances', {}, month?{month}:{});
     if(!rows.length){ $('#allowList').innerHTML='<div class="mini">まだありません</div>'; return; }
     const sum = rows.reduce((a,r)=>a+r.amount,0);
-    $('#allowList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th class="n">金額</th><th>理由</th><th></th></tr>`
+    $('#allowList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th class="n">金額</th><th>メモ</th><th></th></tr>`
       + rows.map(r=>`<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.staff)}</td>
-        <td class="n">${yen(r.amount)}</td><td>${esc(r.reason)}${r.memo?'<br><span class="mini">'+esc(r.memo)+'</span>':''}</td>
+        <td class="n">${yen(r.amount)}</td><td>${esc(r.memo||'')}</td>
         <td><button class="del" onclick="removeAllowance('${r.id}')">削除</button></td></tr>`).join('')
       + `<tr><td colspan="2"><b>合計</b></td><td class="n"><b>${yen(sum)}</b></td><td colspan="2"></td></tr></table>`;
   }catch(e){ $('#allowList').innerHTML=`<div class="ng">${esc(e.message)}</div>`; }
@@ -577,17 +578,13 @@ async function boot(silent){
     const d = await api('getStartupData');
     M = d.masters; PAY_METHODS = d.payMethods; STOCK_USES = d.stockUses;
     const opt = n => `<option>${esc(n)}</option>`;
-    $('#f_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
-    $('#f_appointer').innerHTML = '<option value="">なし</option>' + M.staff.map(s=>opt(s.name)).join('');
     $('#k_use').innerHTML = STOCK_USES.map(opt).join('');
-    if(M.staff.length && $('#a_staff')) $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
+    $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
     $('#dl_prod').innerHTML = M.products.map(p=>`<option value="${esc(p.name)}">`).join('');
     if(!silent){
       $('#l_date').value = d.today;
       $('#k_date').value = d.today; $('#s_month').value = d.month; $('#p_month').value = d.month;
       $('#a_date').value = d.today; $('#a_month').value = d.month;
-      $('#a_reason').innerHTML = (d.allowanceReasons||['研修','短時間勤務','その他']).map(opt).join('');
-      $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
     }
   }catch(e){ if(!silent) toast('接続できません：' + e.message, 5000); }
 }
