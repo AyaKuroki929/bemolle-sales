@@ -201,6 +201,17 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 const yen = n => '¥' + (Number(n)||0).toLocaleString();
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+// 5秒たっても返ってこないとき、通信は切らずに「やり直す」を添える。
+// Googleのサーバーは立ち上がりに30秒以上かかることがあるので、待つか押し直すかは彩さんが選ぶ
+function slowNote(el, retry){
+  const t = setTimeout(function(){
+    el.innerHTML = '<div class="card mini">読み込み中…<br>'
+      + '<span class="mini">時間がかかっています。しばらく使っていないと立ち上がりに30秒ほどかかることがあります。</span><br>'
+      + '<button class="btn ghost sm" style="margin-top:8px">やり直す</button></div>';
+    el.querySelector('button').onclick = retry;
+  }, 5000);
+  return function(){ clearTimeout(t); };
+}
 function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('on');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'), ms); }
 
@@ -404,15 +415,18 @@ async function delMaster(type, name){
 
 // ─── 支払入力 ───
 $('#btnPayLoad').onclick = loadPayQueue;
-let PAYQ = [];
+let PAYQ = [], PAYSEQ = 0;
 async function loadPayQueue(){
   const month=$('#p_month').value, date=$('#p_date').value;
   if(!month && !date) return toast('月か日を選んでください');
+  const seq = ++PAYSEQ;                     // 押し直したときは、古いほうの結果を捨てる
   $('#payList').innerHTML='<div class="card mini">読み込み中…</div>';
+  const stopNote = slowNote($('#payList'), loadPayQueue);
   try{
     const params={}; if(date) params.date=date; else params.month=month;
     if($('#p_all').checked) params.all='true';
     PAYQ = await api('getPayQueue', {}, params);
+    if(seq !== PAYSEQ) return;
     const rest = PAYQ.filter(s=>s.payState!=='入力済').length;
     $('#p_count').textContent = `${PAYQ.length}件 / 未入力 ${rest}件`;
     if(!PAYQ.length){ $('#payList').innerHTML='<div class="card ok">未入力はありません 🎉</div>'; return; }
@@ -435,7 +449,10 @@ async function loadPayQueue(){
         <div id="sp_${i}"></div>
       </div>`;
     }).join('');
-  }catch(e){ $('#payList').innerHTML=`<div class="card ng">${esc(e.message)}</div>`; }
+  }catch(e){
+    if(seq === PAYSEQ) $('#payList').innerHTML =
+      `<div class="card ng">${esc(e.message)}<br><button class="btn ghost sm" style="margin-top:8px" onclick="loadPayQueue()">やり直す</button></div>`;
+  }finally{ stopNote(); }
 }
 async function quickPay(i, method){
   const s=PAYQ[i];
@@ -553,7 +570,11 @@ async function boot(silent){
     }
   }catch(e){ if(!silent) toast('接続できません：' + e.message, 5000); }
 }
-boot().then(()=>{ if(getPin()) loadPayQueue(); });
+// 起動の読み込み自体が遅いこともあるので、最初から「読み込み中…」を出しておく
+$('#payList').innerHTML='<div class="card mini">読み込み中…</div>';
+const stopBootNote = slowNote($('#payList'), ()=>location.reload());
+boot().then(()=>{ stopBootNote(); if(getPin()) loadPayQueue(); })
+      .catch(()=>{ stopBootNote(); });
 setInterval(() => api('keepWarm').catch(()=>{}), 5*60*1000);
 </script>
 </body>

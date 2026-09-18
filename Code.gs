@@ -35,6 +35,9 @@ const TREAT_RULES = {
 };
 const RATE_PRODUCT   = 0.10;  // 物販 10%
 const RATE_SUBSCRIBE = 0.05;  // 定期便 2ヶ月目以降 5%
+// 定期便の5%の出し方を変えた月。この月以降は商品1つずつ、それより前はお客様ごとの合計に5%
+// （8月までの支給はお客様ごとで確定済みなので、過去の月を見たときに数字が変わらないようにしている）
+const SUB_PER_ITEM_FROM = '2026-09';
 const RATE_FIXED5    = 0.05;  // ラジショット・部位チケット（件数に数えない契約）5%
 // 契約インセンティブ: 月内の件数に応じて 1〜2件目5% / 3〜4件目8% / 5件目以降10%
 function contractRate_(indexFromOne) {
@@ -815,10 +818,15 @@ function getIncentive(month) {
       ensure(staff).product += amt;
       ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（物販10%）', amount: amt });
     } else if (r['種別'] === '定期便') {
-      // 5%はお客様ごとにまとめてから。サブスク個数把握のQ列（お客様1行）と同じ出し方
       if (first) {
         ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（定期便・初回は対象外）', amount: 0 });
+      } else if (month >= SUB_PER_ITEM_FROM) {
+        // 2026年9月から：商品1つずつに5%（分かりやすさを優先・2026-09-18 彩さん決定）
+        const amt = Math.floor(netAmt * RATE_SUBSCRIBE);
+        ensure(staff).subscribe += amt;
+        ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（定期便5%）', amount: amt });
       } else {
+        // 2026年8月まで：お客様ごとの合計に5%（サブスク個数把握のQ列と同じ出し方）
         const head = saleById[String(r['会計ID'])] || {};
         const k = staff + '|' + ymd_(r['日付']) + '|' + (head['顧客名'] || '');
         if (!subGroups[k]) { subGroups[k] = { staff: staff, date: ymd_(r['日付']), net: 0, names: [] }; subOrder.push(k); }
