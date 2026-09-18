@@ -19,12 +19,27 @@ ROW_RE = re.compile(
     r'(✅消化)?(?:メモ：(.*?))?(?:スタッフ：(.*?))?(?:編集|削除)')
 
 
+# タブごとに一覧（RepeatingGroup）が別々に存在する。ページ全体を読むと3タブ分が混ざる
+TAB_IDX = {'物販': 0, 'サービス': 1, 'コース': 2}
+YM = f'{YEAR}/{MON}/'
+
+
+def rg(page, tab):
+    gs = page.query_selector_all('[class*="RepeatingGroup"]')
+    if len(gs) <= TAB_IDX[tab]:
+        sys.exit(f'{tab}の一覧が見つかりませんでした（一覧は{len(gs)}個しかありません）')
+    return gs[TAB_IDX[tab]]
+
+
 def parse_rows(page, tab):
-    rows = []
-    for el in page.query_selector_all('[class*="RepeatingGroup"] > *'):
+    rows, other = [], 0
+    for el in rg(page, tab).query_selector_all(':scope > *'):
         t = re.sub(r'\s', '', el.text_content() or '')
         m = ROW_RE.match(t)
         if not m:
+            continue
+        if not m.group(2).startswith(YM):          # 対象月以外が混じったら捨てる
+            other += 1
             continue
         rows.append({'区分': tab, '日付': m.group(2), '名称': m.group(1),
                      '数量': m.group(3) or '1', '顧客': m.group(4),
@@ -32,16 +47,18 @@ def parse_rows(page, tab):
                      'スタッフ': (m.group(8) or '').strip(),
                      '状態': '消化' if m.group(6) else ('契約' if tab == 'コース' else ''),
                      'メモ': (m.group(7) or '').strip()})
+    if other:
+        print(f'    （{MONTH}以外の{other}件は除きました）')
     return rows
 
 
-def load_all(page):
+def load_all(page, tab):
     """一覧は少しずつしか描画されないので、最後まで増えなくなるまでスクロールする"""
     last, stable = -1, 0
     for _ in range(40):
         page.mouse.wheel(0, 20000)
         page.wait_for_timeout(900)
-        n = len(page.query_selector_all('[class*="RepeatingGroup"] > *'))
+        n = len(rg(page, tab).query_selector_all(':scope > *'))
         if n == last:
             stable += 1
             if stable >= 4:
@@ -118,7 +135,7 @@ def main():
             for tab in ['物販', 'サービス', 'コース']:
                 click_text(page, tab)
                 page.wait_for_timeout(3000)
-                n = load_all(page)
+                n = load_all(page, tab)
                 got = parse_rows(page, tab)
                 print(f'  {tab}: {len(got)}件（描画 {n}）')
                 all_rows += got

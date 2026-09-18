@@ -44,13 +44,16 @@ jobs:
           SHEET_ID: ${{ secrets.SHEET_ID }}
         run: python3 import_sales.py "out/urakata_${{ steps.m.outputs.month }}.csv"
 
-      - name: 失敗したときの画面を残す
-        if: failure()
+      - name: 取ってきた中身を残す（確認用）
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: 失敗時のスクリーンショット
-          path: out/*.png
+          name: 取得データ
+          path: |
+            out/*.csv
+            out/*.png
           if-no-files-found: ignore
+          retention-days: 7
 
       - name: 失敗・要確認のときLINEで知らせる
         if: failure()
