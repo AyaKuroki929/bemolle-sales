@@ -55,8 +55,10 @@ function doPost(e) {
 }
 
 // 管理者PINが要るアクション（マスタ変更・削除・設定）
-const ADMIN_ACTIONS = ['init', 'deleteSale', 'deleteStock', 'saveMaster', 'deleteMaster',
-                       'changePin', 'setupTriggers'];
+// お客様の名前や売上が入るので、データに触るアクションは全部PINで守る。
+// 素通しなのは疎通確認(keepWarm)とPIN照合(checkPin)だけ。
+const OPEN_ACTIONS  = ['keepWarm', 'checkPin'];
+function isOpenAction_(a) { return OPEN_ACTIONS.indexOf(a) !== -1; }
 
 function getStoredPin() {
   const p = PropertiesService.getScriptProperties().getProperty('ADMIN_PIN');
@@ -81,7 +83,7 @@ function handle(params, body) {
   const d = body || {};
   const action = params.action || d.action;
   try {
-    if (ADMIN_ACTIONS.indexOf(action) !== -1) {
+    if (!isOpenAction_(action)) {
       const pin = ((d.pin != null ? d.pin : params.pin) || '').toString();
       if (!pinRateGuard_(pin)) throw new Error('unauthorized');
     }

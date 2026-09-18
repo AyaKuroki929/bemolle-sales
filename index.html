@@ -221,7 +221,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const API_URL = 'PASTE_GAS_WEBAPP_URL_HERE';
+const API_URL = 'https://script.google.com/macros/s/AKfycbw5r9qSAxC613fnqJOdlRsj1ORblpDGGf_IhuYPmJZwfk4kfOGqBxJ4D-OWBicezim7/exec';
 
 let M = { products: [], menus: [], staff: [] };
 let PAY_METHODS = ['現金','JMS','Square','振込','HPポイント','その他'];
@@ -236,14 +236,30 @@ const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<'
 function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('on');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'), ms); }
 
+function getPin(){ try{ return localStorage.getItem('bemolle_pin')||''; }catch(e){ return ''; } }
+function setPin(v){ try{ localStorage.setItem('bemolle_pin', v); }catch(e){} }
+async function askPin(msg){
+  const v = prompt(msg || '管理者PINを入れてください（この端末に記憶します）');
+  if(v) setPin(v);
+  return v;
+}
 async function api(action, payload={}, params={}){
+  const pin = getPin();
+  if(pin){ params = Object.assign({}, params, {pin}); payload = Object.assign({}, payload, {pin}); }
   const q = new URLSearchParams(Object.assign({action}, params)).toString();
   const res = await fetch(API_URL + '?' + q, {
     method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify(Object.assign({action}, payload))
   });
   const j = await res.json();
-  if(!j.ok) throw new Error(j.error||'エラー');
+  if(!j.ok){
+    if(j.error==='unauthorized'){
+      try{ localStorage.removeItem('bemolle_pin'); }catch(e){}
+      const v = await askPin('PINが違います。もう一度入れてください');
+      if(v) return api(action, payload, params);
+    }
+    throw new Error(j.error||'エラー');
+  }
   return j.data;
 }
 
@@ -731,6 +747,7 @@ async function saveSplit(i){
 
 // ─── 起動 ───
 async function boot(silent){
+  if(!getPin()) await askPin();
   try{
     const d = await api('getStartupData');
     M = d.masters; PAY_METHODS = d.payMethods; STOCK_USES = d.stockUses;
