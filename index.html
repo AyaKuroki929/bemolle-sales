@@ -271,9 +271,8 @@ async function loadStocks(){
   }catch(e){ $('#stockList').innerHTML = `<div class="ng">${esc(e.message)}</div>`; }
 }
 async function removeStock(id){
-  const pin = prompt('削除するには管理者PINを入れてください');
-  if(!pin) return;
-  try{ await api('deleteStock', { id, pin }); toast('削除しました'); loadStocks(); }
+  if(!confirm('この払出の記録を削除しますか？')) return;
+  try{ await api('deleteStock', { id }); toast('削除しました'); loadStocks(); }
   catch(e){ toast(e.message); }
 }
 

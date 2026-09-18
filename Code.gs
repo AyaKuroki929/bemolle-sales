@@ -926,6 +926,12 @@ function getSalary(month) {
 }
 
 // ─── 税理士向けCSV ─────────────────────────────────
+// CSVの金額は ¥9,720 の形で出す（彩さんが目で見るため。表計算ソフトは通貨として読む）
+function yen_(v) {
+  const n = Number(v) || 0;
+  return '¥' + n.toLocaleString('ja-JP');
+}
+
 function csvCell_(v) {
   const s = (v == null ? '' : String(v));
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -939,7 +945,11 @@ function exportCsv(month) {
   all.payments.forEach(function (p) {
     const k = String(p['会計ID']);
     if (!payBySale[k]) payBySale[k] = [];
-    payBySale[k].push((p['支払方法'] || '') + (p['状態'] === '未収' ? '(未収)' : '') + ':' + (Number(p['金額']) || 0));
+    // 後日もらった分は、もらった日も出す（例：振込 ¥20,000（9/25入金)）
+    const paid = ymd_(p['入金日']);
+    const when = (p['状態'] === '未収') ? '（未収）'
+               : (paid ? '（' + paid.slice(5).replace('-', '/') + '入金）' : '');
+    payBySale[k].push((p['支払方法'] || '') + ' ' + yen_(p['金額']) + when);
   });
 
   const rows = [['日付', '顧客名', '担当者', '種別', '名称', '数量', '税率', '税抜金額', '税込金額', '支払方法', '備考']];
@@ -949,16 +959,12 @@ function exportCsv(month) {
       const h = saleById[String(r['会計ID'])] || {};
       rows.push([ymd_(r['日付']), h['顧客名'] || '', r['担当者'] || '', r['種別'], r['名称'],
                  Number(r['数量']) || 1, Number(r['税率']) || 0,
-                 Number(r['税抜金額']) || 0, Number(r['税込金額']) || 0,
+                 yen_(r['税抜金額']), yen_(r['税込金額']),
                  (payBySale[String(r['会計ID'])] || []).join(' / '), r['備考'] || '']);
     });
 
-  const stockRows = [[''], ['■ 在庫払出（売上ではない持ち出し）'], ['日付', '商品名', '数量', '用途', '金額', 'メモ']];
-  getStocks({ month: month }).forEach(function (s) {
-    stockRows.push([s.date, s.name, s.qty, s.use, s.amount, s.memo || '']);
-  });
-
-  const body = rows.concat(stockRows).map(function (r) {
+  // 在庫払出は売上ではないのでCSVには出さない（2026-09-19 彩さん）。画面の在庫払出タブで見る
+  const body = rows.map(function (r) {
     return r.map(csvCell_).join(',');
   }).join('\r\n');
   return { month: month, filename: 'ベモーレ売上_' + month + '.csv', csv: body };
