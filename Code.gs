@@ -70,6 +70,9 @@ function getStoredPin() {
   const p = PropertiesService.getScriptProperties().getProperty('ADMIN_PIN');
   return p || '1234';
 }
+function pinLockedUntil_() {
+  return Number(PropertiesService.getScriptProperties().getProperty('PIN_LOCK_UNTIL') || 0);
+}
 function pinRateGuard_(pin) {
   const props = PropertiesService.getScriptProperties();
   const fails = Number(props.getProperty('PIN_FAILS') || 0);
@@ -91,7 +94,13 @@ function handle(params, body) {
   try {
     if (!isOpenAction_(action)) {
       const pin = ((d.pin != null ? d.pin : params.pin) || '').toString();
-      if (!pinRateGuard_(pin)) throw new Error('unauthorized');
+      if (!pinRateGuard_(pin)) {
+        const lock = pinLockedUntil_();
+        if (lock && Date.now() < lock) {
+          throw new Error('PINを何度か間違えたため、' + Math.ceil((lock - Date.now()) / 60000) + '分ほどロック中です');
+        }
+        throw new Error('unauthorized');
+      }
     }
     let result;
     switch (action) {
@@ -118,7 +127,7 @@ function handle(params, body) {
       case 'getIncentive':    result = getIncentive(params.month); break;
       case 'getSalary':       result = getSalary(params.month);    break;
       case 'exportCsv':       result = exportCsv(params.month);    break;
-      case 'checkPin':        result = { ok: (d.pin || '') === getStoredPin() }; break;
+      case 'checkPin':        result = { ok: ((d.pin != null ? d.pin : params.pin) || '') === getStoredPin() }; break;
       case 'changePin':       result = changePin(d);               break;
       case 'keepWarm':        result = { ok: true };               break;
       default: throw new Error('Unknown action: ' + action);
