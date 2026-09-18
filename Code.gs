@@ -479,7 +479,12 @@ function getPayQueue(params) {
     if (Number(r['税込合計']) <= 0) return false;              // 消化だけの会計は支払い不要
     if (onlyUnentered && r['支払状態'] === '入力済') return false;
     return true;
-  }).sort(function (a, b) { return ymd_(a['日付']) < ymd_(b['日付']) ? -1 : 1; });
+  }).sort(function (a, b) {
+    // 今日に近い日を一番上に（同じ日の中は登録した順）
+    const da = ymd_(a['日付']), db = ymd_(b['日付']);
+    if (da !== db) return da < db ? 1 : -1;
+    return String(a['会計ID']) < String(b['会計ID']) ? -1 : 1;
+  });
 
   return heads.map(function (h) {
     const id = h['会計ID'];
