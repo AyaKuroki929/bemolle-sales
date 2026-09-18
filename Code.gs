@@ -94,6 +94,8 @@ function handle(params, body) {
       case 'getSale':         result = getSale(params.id || d.id); break;
       case 'deleteSale':      result = deleteSale(d);              break;
       case 'settlePayment':   result = settlePayment(d);           break;
+      case 'getPayQueue':     result = getPayQueue(params);        break;
+      case 'savePayments':    result = savePayments(d);            break;
       case 'getUnpaid':       result = getUnpaid();                break;
       case 'saveStock':       result = saveStock(d);               break;
       case 'getStocks':       result = getStocks(params);          break;
@@ -147,7 +149,7 @@ function nowStr_() {
 // ─── シート初期化 ──────────────────────────────────
 function initSheets() {
   const defs = [
-    [SH_SALES,    ['会計ID','日付','顧客名','担当者','アポインター','メモ','税抜合計','税込合計','作成日時','更新日時']],
+    [SH_SALES,    ['会計ID','日付','顧客名','担当者','アポインター','メモ','税抜合計','税込合計','支払状態','作成日時','更新日時']],
     [SH_ITEMS,    ['明細ID','会計ID','日付','種別','名称','数量','区分','税率','税抜金額','税込金額','担当者','初回','備考']],
     [SH_PAYMENTS, ['入金ID','会計ID','会計日','支払方法','金額','状態','入金日','メモ']],
     [SH_STOCK,    ['払出ID','日付','商品名','数量','用途','金額','メモ','登録日時']],
@@ -312,15 +314,17 @@ function saveSale(d) {
 
     // 会計ヘッダ
     const s = sh(SH_SALES);
+    const payState = payRows.length ? '入力済' : (grossTotal ? '未入力' : '支払なし');
     const row = [id, date, d.customer || '', d.staff, d.appointer || '', d.memo || '',
-                 netTotal, grossTotal, isUpdate ? (d.createdAt || nowStr_()) : nowStr_(), nowStr_()];
+                 netTotal, grossTotal, payState,
+                 isUpdate ? (d.createdAt || nowStr_()) : nowStr_(), nowStr_()];
     if (isUpdate) {
       const last = s.getLastRow();
       const ids = last > 1 ? s.getRange(2, 1, last - 1, 1).getValues() : [];
       let found = -1;
       for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(id)) { found = i + 2; break; }
       if (found < 0) throw new Error('会計が見つかりません');
-      row[8] = s.getRange(found, 9).getValue() || nowStr_();
+      row[9] = s.getRange(found, 10).getValue() || nowStr_();
       s.getRange(found, 1, 1, row.length).setValues([row]);
       deleteRowsByKey_(SH_ITEMS, 2, id);
       deleteRowsByKey_(SH_PAYMENTS, 2, id);
@@ -352,7 +356,7 @@ function buildSale_(head, items, payments) {
     id: head['会計ID'], date: ymd_(head['日付']), customer: head['顧客名'],
     staff: head['担当者'], appointer: head['アポインター'], memo: head['メモ'],
     net: Number(head['税抜合計']) || 0, gross: Number(head['税込合計']) || 0,
-    createdAt: head['作成日時'],
+    createdAt: head['作成日時'], payState: head['支払状態'],
     items: items.map(function (r) {
       return { id: r['明細ID'], type: r['種別'], name: r['名称'], qty: Number(r['数量']) || 1,
                kind: r['区分'], tax: Number(r['税率']) || 0, net: Number(r['税抜金額']) || 0,
@@ -434,6 +438,59 @@ function settlePayment(d) {
       }
     }
     throw new Error('入金が見つかりません');
+  });
+}
+
+// ─── 支払方法だけを入れる画面用 ─────────────────────────
+/** 支払方法がまだ入っていない会計を、日付ごと・お客様ごとに返す */
+function getPayQueue(params) {
+  const all = loadAll_();
+  const month = params.month || '';
+  const date  = params.date ? ymd_(params.date) : '';
+  const onlyUnentered = params.all !== 'true';
+  const heads = all.sales.filter(function (r) {
+    const dt = ymd_(r['日付']);
+    if (date && dt !== date) return false;
+    if (month && dt.slice(0, 7) !== month) return false;
+    if (Number(r['税込合計']) <= 0) return false;              // 消化だけの会計は支払い不要
+    if (onlyUnentered && r['支払状態'] === '入力済') return false;
+    return true;
+  }).sort(function (a, b) { return ymd_(a['日付']) < ymd_(b['日付']) ? -1 : 1; });
+
+  return heads.map(function (h) {
+    const id = h['会計ID'];
+    return buildSale_(h,
+      all.items.filter(function (r) { return String(r['会計ID']) === String(id); }),
+      all.payments.filter(function (r) { return String(r['会計ID']) === String(id); }));
+  });
+}
+
+/** 1会計分の支払方法をまとめて保存する（既存の入金は差し替え） */
+function savePayments(d) {
+  return withLock_(function () {
+    const id = d.id;
+    if (!id) throw new Error('会計が指定されていません');
+    const s = sh(SH_SALES);
+    const last = s.getLastRow();
+    const ids = last > 1 ? s.getRange(2, 1, last - 1, 1).getValues() : [];
+    let row = -1;
+    for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(id)) { row = i + 2; break; }
+    if (row < 0) throw new Error('会計が見つかりません');
+    const date = ymd_(s.getRange(row, 2).getValue());
+
+    deleteRowsByKey_(SH_PAYMENTS, 2, id);
+    const pays = (d.payments || []).filter(function (p) { return p && Number(p.amount); });
+    if (pays.length) {
+      const rows = pays.map(function (p) {
+        const st = p.status === '未収' ? '未収' : '入金済';
+        return [newId_('P'), id, date, p.method || '現金', Number(p.amount || 0), st,
+                st === '入金済' ? (ymd_(p.paidDate) || date) : '', p.memo || ''];
+      });
+      sh(SH_PAYMENTS).getRange(sh(SH_PAYMENTS).getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    }
+    s.getRange(row, 9).setValue(pays.length ? '入力済' : '未入力');
+    s.getRange(row, 11).setValue(nowStr_());
+    return { saved: pays.length };
   });
 }
 
