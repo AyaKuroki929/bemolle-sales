@@ -131,6 +131,7 @@ function handle(params, body) {
       case 'getIncentive':    result = getIncentive(params.month); break;
       case 'getSalary':       result = getSalary(params.month);    break;
       case 'exportCsv':       result = exportCsv(params.month);    break;
+      case 'getStocktake':    result = getStocktake();             break;
       case 'checkPin':        result = { ok: ((d.pin != null ? d.pin : params.pin) || '') === getStoredPin() }; break;
       case 'changePin':       result = changePin(d);               break;
       case 'keepWarm':        result = { ok: true };               break;
@@ -972,6 +973,40 @@ function exportCsv(month) {
     return r.map(csvCell_).join(',');
   }).join('\r\n');
   return { month: month, filename: 'ベモーレ売上_' + month + '.csv', csv: body };
+}
+
+/** 棚卸し。うらかたさんから毎晩取り込んだ在庫数 × 仕入値 で、税率別の棚卸高を出す */
+function getStocktake() {
+  const rows = readSheet_(SH_PRODUCTS).filter(function (r) {
+    return String(r['商品名']).trim() && r['有効'] !== false && r['有効'] !== 'FALSE';
+  }).map(function (r) {
+    const qty  = Number(r['在庫数']) || 0;
+    const cost = Number(r['仕入値']) || 0;
+    return { name: r['商品名'], brand: r['ブランド'] || '', tax: Number(r['税率']) || 10,
+             price: Number(r['税抜単価']) || 0, cost: cost, qty: qty, total: cost * qty };
+  });
+  const byTax = {}, byBrand = {};
+  let total = 0, kinds = 0;
+  rows.forEach(function (r) {
+    if (r.qty === 0) return;
+    kinds++;
+    total += r.total;
+    const t = String(r.tax);
+    if (!byTax[t])   byTax[t]   = { qty: 0, total: 0 };
+    if (!byBrand[r.brand]) byBrand[r.brand] = { qty: 0, total: 0 };
+    byTax[t].qty += r.qty;     byTax[t].total += r.total;
+    byBrand[r.brand].qty += r.qty; byBrand[r.brand].total += r.total;
+  });
+  rows.sort(function (a, b) {
+    if (a.brand !== b.brand) return a.brand < b.brand ? -1 : 1;
+    return a.name < b.name ? -1 : 1;
+  });
+  let stockAt = '';
+  readSheet_(SH_SETTINGS).forEach(function (r) {
+    if (String(r['キー']) === '在庫取込日時') stockAt = String(r['値'] || '');
+  });
+  return { date: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'), stockAt: stockAt,
+           total: total, kinds: kinds, byTax: byTax, byBrand: byBrand, items: rows };
 }
 
 function setupTriggers() {

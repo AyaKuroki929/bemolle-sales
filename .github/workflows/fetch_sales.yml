@@ -42,6 +42,18 @@ jobs:
           echo "months=$MONTHS" >> $GITHUB_OUTPUT
           echo "取り込む月: $MONTHS"
 
+      # 商品マスタ（商品名・ブランド・単価・在庫数）を先にそろえる。
+      # 税率と仕入値はうらかたさんに無いので、すでに入っている行のものは触らない
+      - name: 商品マスタをうらかたさんに合わせる
+        env:
+          URAKATA_EMAIL: ${{ secrets.URAKATA_EMAIL }}
+          URAKATA_PASSWORD: ${{ secrets.URAKATA_PASSWORD }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: |
+          set -o pipefail
+          python3 fetch_items.py | tee -a out.txt
+
       - name: うらかたさんから取ってきてスプレッドシートに入れる
         env:
           URAKATA_EMAIL: ${{ secrets.URAKATA_EMAIL }}

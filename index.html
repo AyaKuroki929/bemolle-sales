@@ -77,6 +77,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <button data-t="stock">在庫払出</button>
     <button data-t="unpaid">未収</button>
     <button data-t="allow">日当</button>
+    <button data-t="take">棚卸し</button>
     <button data-t="sum">集計</button>
     <button data-t="conf">設定</button>
   </nav>
@@ -164,6 +165,21 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <div id="sumBody"></div>
 </section>
 
+<!-- ══ 棚卸し ══ -->
+<section id="take">
+  <div class="card">
+    <h2>棚卸し
+      <span>
+        <button class="btn sm" id="btnTakeReload">更新</button>
+        <button class="btn sub sm" id="btnTakeCsv">CSV保存</button>
+      </span>
+    </h2>
+    <div class="mini">うらかたさんの在庫数 × 仕入値。仕入値はH.R.が5掛け、ほかは6掛け（実額が分かっているものはその値）</div>
+    <div id="takeStamp" class="mini" style="margin-top:4px"></div>
+  </div>
+  <div id="takeBody"></div>
+</section>
+
 <!-- ══ 設定 ══ -->
 <section id="conf">
   <div class="card">
@@ -247,6 +263,7 @@ $$('nav button').forEach(b => b.onclick = () => {
   if(b.dataset.t==='allow') loadAllowances();
   if(b.dataset.t==='stock') loadStocks();
   if(b.dataset.t==='unpaid') loadUnpaid();
+  if(b.dataset.t==='take') loadStocktake();
   if(b.dataset.t==='conf') renderMasters();
 });
 
@@ -382,6 +399,64 @@ $('#btnCsv').onclick = async () => {
     toast('CSVを保存しました');
   }catch(e){ toast(e.message); }
 };
+
+// ─── 棚卸し ───
+let TAKE = null;
+$('#btnTakeReload').onclick = loadStocktake;
+$('#btnTakeCsv').onclick = () => {
+  if(!TAKE) return toast('先に読み込んでください');
+  const q = v => /[",\n]/.test(String(v)) ? '"'+String(v).replace(/"/g,'""')+'"' : String(v);
+  const L = [['ブランド','商品名','税率','仕入値','在庫数','棚卸高'].map(q).join(',')];
+  TAKE.items.filter(i=>i.qty!==0).forEach(i =>
+    L.push([i.brand,i.name,i.tax+'%','¥'+i.cost.toLocaleString(),i.qty,'¥'+i.total.toLocaleString()].map(q).join(',')));
+  L.push('');
+  Object.keys(TAKE.byTax).sort().forEach(k =>
+    L.push([`${k}%の合計`,'','','',TAKE.byTax[k].qty,'¥'+TAKE.byTax[k].total.toLocaleString()].map(q).join(',')));
+  L.push(['総合計','','','','','¥'+TAKE.total.toLocaleString()].map(q).join(','));
+  const blob = new Blob(['\uFEFF'+L.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a2 = document.createElement('a');
+  a2.href = URL.createObjectURL(blob);
+  a2.download = `ベモーレ棚卸し_${TAKE.date}.csv`;
+  document.body.appendChild(a2); a2.click(); a2.remove();
+  toast('CSVを保存しました');
+};
+async function loadStocktake(){
+  $('#takeBody').innerHTML = '<div class="card mini">読み込み中…</div>';
+  const stopNote = slowNote($('#takeBody'), loadStocktake);
+  try{
+    const t = await api('getStocktake');
+    TAKE = t;
+    $('#takeStamp').textContent = t.stockAt ? `在庫は ${t.stockAt} にうらかたさんから取り込んだもの` : '';
+    const taxRows = Object.keys(t.byTax).sort().map(k =>
+      `<tr><td>${esc(k)}%</td><td class="n">${t.byTax[k].qty}点</td><td class="n">${yen(t.byTax[k].total)}</td></tr>`).join('');
+    const brRows = Object.keys(t.byBrand).sort().map(k =>
+      `<tr><td>${esc(k||'（ブランドなし）')}</td><td class="n">${t.byBrand[k].qty}点</td><td class="n">${yen(t.byBrand[k].total)}</td></tr>`).join('');
+    const itemRows = t.items.filter(i=>i.qty!==0).map(i =>
+      `<tr><td>${esc(i.brand)}</td><td>${esc(i.name)}</td><td class="n">${i.tax}%</td>
+       <td class="n">${yen(i.cost)}</td><td class="n">${i.qty}</td><td class="n">${yen(i.total)}</td></tr>`).join('');
+    const t8  = (t.byTax['8']  || {qty:0,total:0});
+    const t10 = (t.byTax['10'] || {qty:0,total:0});
+    $('#takeBody').innerHTML = `
+      <div class="card">
+        <div class="tot"><span>8%対象</span><span>${yen(t8.total)}<span class="mini">（${t8.qty}点）</span></span></div>
+        <div class="tot"><span>10%対象</span><span>${yen(t10.total)}<span class="mini">（${t10.qty}点）</span></span></div>
+        <div class="tot"><span>総合計（税抜）</span><b>${yen(t.total)}</b></div>
+        <div class="mini" style="margin-top:6px">在庫のある商品 ${t.kinds}種類</div>
+      </div>
+      <div class="card">
+      <h2 style="font-size:14px">税率別</h2>
+      <table><tr><th>税率</th><th class="n">在庫</th><th class="n">棚卸高</th></tr>${taxRows}</table>
+      <h2 style="font-size:14px;margin-top:14px">ブランド別</h2>
+      <table><tr><th>ブランド</th><th class="n">在庫</th><th class="n">棚卸高</th></tr>${brRows}</table>
+      <h2 style="font-size:14px;margin-top:14px">商品ごと</h2>
+      <div style="overflow-x:auto"><table>
+        <tr><th>ブランド</th><th>商品</th><th class="n">税率</th><th class="n">仕入値</th><th class="n">在庫</th><th class="n">棚卸高</th></tr>
+        ${itemRows}</table></div></div>`;
+  }catch(e){
+    $('#takeBody').innerHTML = `<div class="card ng">${esc(e.message)}<br>
+      <button class="btn ghost sm" style="margin-top:8px" onclick="loadStocktake()">やり直す</button></div>`;
+  }finally{ stopNote(); }
+}
 
 // ─── 設定（マスタ）───
 function masterRow(type, label, shown, extra, key){
