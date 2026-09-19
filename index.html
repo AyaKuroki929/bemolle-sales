@@ -112,8 +112,9 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
       <div style="flex:0 0 80px"><label>数量</label><input type="number" id="k_qty" value="1" min="1"></div>
     </div>
     <div style="margin-top:8px"><label>商品</label>
-      <input id="k_name" list="dl_prod" placeholder="商品名（登録していないものは打ち込みでOK）"></div>
+      <input id="k_name" placeholder="商品名（打ち込むと候補がしぼられます）" autocomplete="off"></div>
     <div class="mini" id="k_hint" style="margin-top:4px"></div>
+    <div id="k_sugg" style="margin-top:6px;max-height:220px;overflow-y:auto"></div>
     <button class="btn sub wide" id="btnAddLine" style="margin-top:8px">＋この商品を足す</button>
     <div id="k_list" style="margin-top:10px"></div>
     <div style="margin-top:8px"><label>メモ（まとめて付きます）</label><input id="k_memo" placeholder="任意"></div>
@@ -200,7 +201,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 </main>
 <div id="toast"></div>
-<datalist id="dl_prod"></datalist>
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
@@ -271,14 +271,21 @@ $$('nav button').forEach(b => b.onclick = () => {
 
 // ─── 在庫払出 ───
 // ブランドで候補を絞る。絞っても打ち込みは自由（登録していない商品も記録できる）
+// iPadのSafariは予測候補（datalist）が出ないので、自前でタップできる一覧を出す
 function fillProdList(){
   const b = $('#k_brand') ? $('#k_brand').value : '';
-  const list = (M.products||[]).filter(p => !b || p.brand === b);
-  $('#dl_prod').innerHTML = list.map(p=>`<option value="${esc(p.name)}">${esc(p.brand||'')}</option>`).join('');
-  $('#k_hint').textContent = b
-    ? `${esc(b)} の ${list.length}件から選べます（ここに無いものは打ち込みでOK）`
-    : `登録済み ${list.length}件から選べます（ここに無いものは打ち込みでOK）`;
+  const q = ($('#k_name').value || '').trim().toLowerCase();
+  const base = (M.products||[]).filter(p => !b || p.brand === b);
+  const list = q ? base.filter(p => (p.name+' '+(p.brand||'')).toLowerCase().includes(q)) : base;
+  $('#k_sugg').innerHTML = list.slice(0,40).map(p=>
+    `<div class="line" style="padding:8px 10px;margin-bottom:4px;cursor:pointer"
+       onclick="pickProd('${esc(p.name).replace(/'/g,"\\'")}')">
+       <span class="mini">${esc(p.brand||'')}</span> ${esc(p.name)}</div>`).join('')
+    || '<div class="mini">候補にありません。そのまま打ち込めば記録できます</div>';
+  $('#k_hint').textContent = `${b ? esc(b)+' の' : '登録済み'} ${list.length}件`
+    + (list.length>40 ? '（上から40件を表示）' : '') + '（ここに無いものは打ち込みでOK）';
 }
+function pickProd(name){ $('#k_name').value = name; fillProdList(); $('#k_qty').focus(); }
 
 // 同じ用途で何個も出すことがあるので、いったん溜めてからまとめて記録する
 let KLINES = [];
@@ -323,6 +330,7 @@ $('#btnSaveStock').onclick = async () => {
   loadStocks();
 };
 $('#k_brand').onchange = () => { $('#k_name').value=''; fillProdList(); };
+$('#k_name').oninput = fillProdList;
 renderKLines();
 $('#btnReloadStock').onclick = loadStocks;
 async function loadStocks(){
