@@ -107,9 +107,12 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
       <div><label>用途</label><select id="k_use"></select></div>
     </div>
     <div class="row" style="margin-top:8px">
-      <div style="flex:2"><label>商品</label><input id="k_name" list="dl_prod" placeholder="商品名"></div>
+      <div><label>ブランドで絞る</label><select id="k_brand"></select></div>
       <div style="flex:0 0 80px"><label>数量</label><input type="number" id="k_qty" value="1" min="1"></div>
     </div>
+    <div style="margin-top:8px"><label>商品</label>
+      <input id="k_name" list="dl_prod" placeholder="商品名（登録していないものは打ち込みでOK）"></div>
+    <div class="mini" id="k_hint" style="margin-top:4px"></div>
     <div style="margin-top:8px"><label>メモ</label><input id="k_memo" placeholder="任意"></div>
     <button class="btn wide" id="btnSaveStock" style="margin-top:10px">払出を記録</button>
   </div>
@@ -248,6 +251,16 @@ $$('nav button').forEach(b => b.onclick = () => {
 });
 
 // ─── 在庫払出 ───
+// ブランドで候補を絞る。絞っても打ち込みは自由（登録していない商品も記録できる）
+function fillProdList(){
+  const b = $('#k_brand') ? $('#k_brand').value : '';
+  const list = (M.products||[]).filter(p => !b || p.brand === b);
+  $('#dl_prod').innerHTML = list.map(p=>`<option value="${esc(p.name)}">${esc(p.brand||'')}</option>`).join('');
+  $('#k_hint').textContent = b
+    ? `${esc(b)} の ${list.length}件から選べます（ここに無いものは打ち込みでOK）`
+    : `登録済み ${list.length}件から選べます（ここに無いものは打ち込みでOK）`;
+}
+
 $('#btnSaveStock').onclick = async () => {
   const d = { date:$('#k_date').value, name:$('#k_name').value.trim(), qty:Number($('#k_qty').value)||1,
               use:$('#k_use').value, memo:$('#k_memo').value.trim() };
@@ -257,6 +270,7 @@ $('#btnSaveStock').onclick = async () => {
     loadStocks();
   }catch(e){ toast(e.message); }
 };
+$('#k_brand').onchange = () => { $('#k_name').value=''; fillProdList(); };
 $('#btnReloadStock').onclick = loadStocks;
 async function loadStocks(){
   const month = ($('#k_date').value || new Date().toISOString().slice(0,10)).slice(0,7);
@@ -595,7 +609,9 @@ async function boot(silent){
     const opt = n => `<option>${esc(n)}</option>`;
     $('#k_use').innerHTML = STOCK_USES.map(opt).join('');
     $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
-    $('#dl_prod').innerHTML = M.products.map(p=>`<option value="${esc(p.name)}">${esc(p.brand||'')}</option>`).join('');
+    const brands = [...new Set(M.products.map(p=>p.brand).filter(Boolean))].sort();
+    $('#k_brand').innerHTML = '<option value="">すべて</option>' + brands.map(opt).join('');
+    fillProdList();
     if(!silent){
       // URLに ?month=2026-08 が付いていればその月で開く（付いていなければ今月）
       const q = new URLSearchParams(location.search).get('month');
