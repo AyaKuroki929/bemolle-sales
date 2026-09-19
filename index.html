@@ -46,6 +46,13 @@ input:focus,select:focus{outline:2px solid var(--rose);outline-offset:-1px}
   .row>div.btnwrap{flex:1 0 100%}
   .row>div.btnwrap>.btn.sm{width:100%}
 }
+/* スマホは横に2つ並べると入りきらないので、縦に積む */
+@media (max-width:600px){
+  .row>div{flex:1 0 100%}
+}
+/* 入力欄が中身の幅で広がって親からはみ出すのを防ぐ */
+.row>div{min-width:0}
+input,select{max-width:100%}
 .btn.wide{width:100%;padding:14px}
 .line{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:#fdfbf9}
 .line .tag{display:inline-block;background:var(--rose);color:#fff;font-size:11px;font-weight:700;
@@ -97,7 +104,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <div class="card">
     <h2>うらかたさんから取り込んだ売上に、支払方法を入れる</h2>
     <div class="row">
-      <div><label>月</label><input type="month" id="p_month"></div>
+      <div><label>月</label><select id="p_month"></select></div>
       <div><label>日（空なら月まとめて）</label><input type="date" id="p_date"></div>
       <div class="btnwrap"><button class="btn sm" id="btnPayLoad">表示</button></div>
     </div>
@@ -158,7 +165,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   </div>
   <div class="card">
     <h2><span id="a_title">今月の分</span><button class="btn ghost sm" id="btnReloadAllow">更新</button></h2>
-    <div class="row"><div><input type="month" id="a_month"></div></div>
+    <div class="row"><div><select id="a_month"></select></div></div>
     <div id="allowList" style="margin-top:10px"></div>
   </div>
 </section>
@@ -168,7 +175,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <div class="card">
     <h2>月を選ぶ</h2>
     <div class="row">
-      <div><input type="month" id="s_month"></div>
+      <div><select id="s_month"></select></div>
       <div class="btnwrap"><button class="btn sm" id="btnSum">集計する</button></div>
       <div class="btnwrap"><button class="btn sub sm" id="btnCsv">CSV保存</button></div>
     </div>
@@ -245,6 +252,22 @@ function slowNote(el, retry){
   }, 5000);
   return function(){ clearTimeout(t); };
 }
+// 月のプルダウン。今月から前後にさかのぼって並べる
+function fillMonths(sel, want){
+  const now = new Date();
+  const list = [];
+  for(let i=-1; i<=15; i++){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    list.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+  if(want && !list.includes(want)) list.unshift(want);
+  sel.innerHTML = list.map(m=>{
+    const [y,mm] = m.split('-');
+    return `<option value="${m}">${y}年${Number(mm)}月</option>`;
+  }).join('');
+  if(want) sel.value = want;
+}
+
 function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('on');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'), ms); }
 
@@ -746,6 +769,7 @@ $('#btnSaveAllow').onclick = () => busy($('#btnSaveAllow'), '登録していま�
 });
 $('#btnReloadAllow').onclick = () => busy($('#btnReloadAllow'), '…', loadAllowances);
 $('#a_month').onchange = loadAllowances;
+$('#p_month').onchange = loadPayQueue;
 async function loadAllowances(){
   const month = $('#a_month').value;
   try{
@@ -781,8 +805,9 @@ async function boot(silent){
       // URLに ?month=2026-08 が付いていればその月で開く（付いていなければ今月）
       const q = new URLSearchParams(location.search).get('month');
       const m = /^\d{4}-\d{2}$/.test(q || '') ? q : d.month;
-      $('#k_date').value = d.today; $('#s_month').value = m; $('#p_month').value = m;
-      $('#a_date').value = d.today; $('#a_month').value = m;
+      $('#k_date').value = d.today;
+      fillMonths($('#p_month'), m); fillMonths($('#s_month'), m); fillMonths($('#a_month'), m);
+      $('#a_date').value = d.today;
     }
   }catch(e){ if(!silent) toast('接続できません：' + e.message, 5000); }
 }
