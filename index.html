@@ -40,6 +40,12 @@ input:focus,select:focus{outline:2px solid var(--rose);outline-offset:-1px}
 .btn.sm{padding:6px 11px;font-size:13px;border-radius:7px}
 /* 入力欄と横に並べるボタンは、入力欄と同じ高さにする（iPadでのズレ対策） */
 .row>div>.btn.sm{height:40px;padding:0 16px}
+.row>div.btnwrap{flex:0 0 auto}
+/* iPadは日付の入力欄が横に広がるので、狭いときはボタンを次の行に出す（重なり防止） */
+@media (max-width:900px){
+  .row>div.btnwrap{flex:1 0 100%}
+  .row>div.btnwrap>.btn.sm{width:100%}
+}
 .btn.wide{width:100%;padding:14px}
 .line{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:#fdfbf9}
 .line .tag{display:inline-block;background:var(--rose);color:#fff;font-size:11px;font-weight:700;
@@ -93,7 +99,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <div class="row">
       <div><label>月</label><input type="month" id="p_month"></div>
       <div><label>日（空なら月まとめて）</label><input type="date" id="p_date"></div>
-      <div style="flex:0 0 auto"><button class="btn sm" id="btnPayLoad">表示</button></div>
+      <div class="btnwrap"><button class="btn sm" id="btnPayLoad">表示</button></div>
     </div>
     <label style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:13px;color:var(--ink)">
       <input type="checkbox" id="p_all" style="width:auto"> 入力済みも表示する</label>
@@ -163,8 +169,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <h2>月を選ぶ</h2>
     <div class="row">
       <div><input type="month" id="s_month"></div>
-      <div style="flex:0 0 auto"><button class="btn sm" id="btnSum">集計する</button></div>
-      <div style="flex:0 0 auto"><button class="btn sub sm" id="btnCsv">CSV保存</button></div>
+      <div class="btnwrap"><button class="btn sm" id="btnSum">集計する</button></div>
+      <div class="btnwrap"><button class="btn sub sm" id="btnCsv">CSV保存</button></div>
     </div>
   </div>
   <div id="sumBody"></div>
