@@ -114,8 +114,10 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <div style="margin-top:8px"><label>商品</label>
       <input id="k_name" list="dl_prod" placeholder="商品名（登録していないものは打ち込みでOK）"></div>
     <div class="mini" id="k_hint" style="margin-top:4px"></div>
-    <div style="margin-top:8px"><label>メモ</label><input id="k_memo" placeholder="任意"></div>
-    <button class="btn wide" id="btnSaveStock" style="margin-top:10px">払出を記録</button>
+    <button class="btn sub wide" id="btnAddLine" style="margin-top:8px">＋この商品を足す</button>
+    <div id="k_list" style="margin-top:10px"></div>
+    <div style="margin-top:8px"><label>メモ（まとめて付きます）</label><input id="k_memo" placeholder="任意"></div>
+    <button class="btn wide" id="btnSaveStock" style="margin-top:10px">まとめて記録する</button>
   </div>
   <div class="card">
     <h2>今月の払出<button class="btn ghost sm" id="btnReloadStock">更新</button></h2>
@@ -278,16 +280,50 @@ function fillProdList(){
     : `登録済み ${list.length}件から選べます（ここに無いものは打ち込みでOK）`;
 }
 
+// 同じ用途で何個も出すことがあるので、いったん溜めてからまとめて記録する
+let KLINES = [];
+function renderKLines(){
+  const btn = $('#btnSaveStock');
+  if(!KLINES.length){
+    $('#k_list').innerHTML = '<div class="mini">まだ足していません。商品を選んで「＋この商品を足す」を押してください</div>';
+    btn.textContent = 'この1件を記録する';
+    return;
+  }
+  $('#k_list').innerHTML = '<table><tr><th>商品</th><th class="n">数</th><th></th></tr>'
+    + KLINES.map((l,i)=>`<tr><td>${esc(l.name)}</td><td class="n">${l.qty}</td>
+      <td><button class="del" onclick="delKLine(${i})">外す</button></td></tr>`).join('') + '</table>';
+  btn.textContent = `まとめて記録する（${KLINES.length}件）`;
+}
+function delKLine(i){ KLINES.splice(i,1); renderKLines(); }
+$('#btnAddLine').onclick = () => {
+  const name = $('#k_name').value.trim();
+  if(!name) return toast('商品を入れてください');
+  KLINES.push({ name, qty: Number($('#k_qty').value)||1 });
+  $('#k_name').value=''; $('#k_qty').value=1; $('#k_name').focus();
+  renderKLines();
+};
 $('#btnSaveStock').onclick = async () => {
-  const d = { date:$('#k_date').value, name:$('#k_name').value.trim(), qty:Number($('#k_qty').value)||1,
-              use:$('#k_use').value, memo:$('#k_memo').value.trim() };
-  if(!d.name) return toast('商品を入れてください');
-  try{ await api('saveStock', d); toast('記録しました');
-    $('#k_name').value=''; $('#k_qty').value=1; $('#k_memo').value='';
-    loadStocks();
-  }catch(e){ toast(e.message); }
+  const date=$('#k_date').value, use=$('#k_use').value, memo=$('#k_memo').value.trim();
+  let lines = KLINES.slice();
+  if(!lines.length){                                  // 足していなければ入力欄の1件だけ
+    const name=$('#k_name').value.trim();
+    if(!name) return toast('商品を入れてください');
+    lines = [{ name, qty: Number($('#k_qty').value)||1 }];
+  }
+  const btn=$('#btnSaveStock'); btn.disabled=true;
+  const ng=[];
+  for(const l of lines){
+    try{ await api('saveStock', { date, use, memo, name:l.name, qty:l.qty }); }
+    catch(e){ ng.push(l.name+'（'+e.message+'）'); }
+  }
+  btn.disabled=false;
+  if(ng.length){ toast(ng.length+'件が記録できませんでした：'+ng[0], 4000); }
+  else { toast(lines.length+'件を記録しました'); KLINES=[]; $('#k_name').value=''; $('#k_qty').value=1; $('#k_memo').value=''; }
+  renderKLines();
+  loadStocks();
 };
 $('#k_brand').onchange = () => { $('#k_name').value=''; fillProdList(); };
+renderKLines();
 $('#btnReloadStock').onclick = loadStocks;
 async function loadStocks(){
   const month = ($('#k_date').value || new Date().toISOString().slice(0,10)).slice(0,7);
