@@ -109,7 +109,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <div class="row" style="margin-top:8px">
       <div style="flex:2"><label>商品</label><input id="k_name" list="dl_prod" placeholder="商品名"></div>
       <div style="flex:0 0 80px"><label>数量</label><input type="number" id="k_qty" value="1" min="1"></div>
-      <div><label>金額（税抜・任意）</label><input type="number" id="k_amount" placeholder="0"></div>
     </div>
     <div style="margin-top:8px"><label>メモ</label><input id="k_memo" placeholder="任意"></div>
     <button class="btn wide" id="btnSaveStock" style="margin-top:10px">払出を記録</button>
@@ -251,10 +250,10 @@ $$('nav button').forEach(b => b.onclick = () => {
 // ─── 在庫払出 ───
 $('#btnSaveStock').onclick = async () => {
   const d = { date:$('#k_date').value, name:$('#k_name').value.trim(), qty:Number($('#k_qty').value)||1,
-              use:$('#k_use').value, amount:Number($('#k_amount').value)||0, memo:$('#k_memo').value.trim() };
+              use:$('#k_use').value, memo:$('#k_memo').value.trim() };
   if(!d.name) return toast('商品を入れてください');
   try{ await api('saveStock', d); toast('記録しました');
-    $('#k_name').value=''; $('#k_qty').value=1; $('#k_amount').value=''; $('#k_memo').value='';
+    $('#k_name').value=''; $('#k_qty').value=1; $('#k_memo').value='';
     loadStocks();
   }catch(e){ toast(e.message); }
 };
@@ -264,9 +263,9 @@ async function loadStocks(){
   try{
     const rows = await api('getStocks', {}, { month });
     if(!rows.length){ $('#stockList').innerHTML = '<div class="mini">まだありません</div>'; return; }
-    $('#stockList').innerHTML = `<table><tr><th>日付</th><th>商品</th><th class="n">数</th><th>用途</th><th class="n">金額</th><th></th></tr>`
+    $('#stockList').innerHTML = `<table><tr><th>日付</th><th>商品</th><th class="n">数</th><th>用途</th><th>メモ</th><th></th></tr>`
       + rows.map(r => `<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.name)}</td><td class="n">${r.qty}</td>
-        <td>${esc(r.use)}</td><td class="n">${r.amount?yen(r.amount):'—'}</td>
+        <td>${esc(r.use)}</td><td class="mini">${esc(r.memo||'')}</td>
         <td><button class="del" onclick="removeStock('${r.id}')">削除</button></td></tr>`).join('') + '</table>';
   }catch(e){ $('#stockList').innerHTML = `<div class="ng">${esc(e.message)}</div>`; }
 }
