@@ -319,7 +319,7 @@ async function loadSummary(){
     const typeRows = Object.keys(s.byType).map(k =>
       `<tr><td>${esc(k)}</td><td class="n">${yen(s.byType[k].net)}</td></tr>`).join('');
     const stockRows = Object.keys(s.stock).map(k =>
-      `<tr><td>${esc(k)}</td><td class="n">${s.stock[k].qty}点</td><td class="n">${s.stock[k].amount?yen(s.stock[k].amount):'—'}</td></tr>`).join('');
+      `<tr><td>${esc(k)}</td><td class="n">${s.stock[k].qty}点</td></tr>`).join('');
     const incCards = inc.staff.map(p => {
       const sal = (SAL.staff||[]).find(x=>x.staff===p.staff) || {};
       return `<div class="card">
@@ -348,7 +348,7 @@ async function loadSummary(){
       <div class="card"><h2>税率別</h2><table><tr><th>税率</th><th class="n">税抜</th><th class="n">税込</th></tr>${taxRows}</table></div>
       <div class="card"><h2>支払方法別</h2><table><tr><th>方法</th><th class="n">入金済</th><th class="n">未収</th></tr>${methodRows}</table></div>
       <div class="card"><h2>種別</h2><table><tr><th>種別</th><th class="n">税抜</th></tr>${typeRows}</table></div>
-      <div class="card"><h2>在庫払出（売上外）</h2><table><tr><th>用途</th><th class="n">数量</th><th class="n">金額</th></tr>${stockRows}</table></div>
+      <div class="card"><h2>在庫払出（売上外）</h2><table><tr><th>用途</th><th class="n">数量</th></tr>${stockRows}</table></div>
       ${incCards}`;
   }catch(e){ $('#sumBody').innerHTML = `<div class="card ng">${esc(e.message)}</div>`; }
 }
