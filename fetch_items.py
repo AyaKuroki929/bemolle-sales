@@ -161,6 +161,9 @@ def main():
     by = {keyname(r[0]): r for r in rows}
     order = max([int(r[col['表示順']] or 0) for r in rows] + [0])
 
+    import datetime
+    today = (datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime('%Y-%m-%d')
+
     added, changed = [], []
     for k, (name, brand, price, stock) in found.items():
         r = by.get(k)
@@ -176,8 +179,10 @@ def main():
             order += 1
             new[col['表示順']] = order
             new[col['有効']] = True
+            if '最終確認日' in col:
+                new[col['最終確認日']] = today
             rows.append(new); by[k] = new
-            added.append(f'{name}（{brand} {price:,}円）')
+            added.append(k)
             continue
         diff = []
         if str(r[col['税抜単価']] or 0) != str(price) and price > 0:
@@ -191,12 +196,40 @@ def main():
         if not str(r[col['仕入値']]).strip() and price > 0:
             r[col['仕入値']] = shiire(brand, price)
             diff.append(f'仕入値を {r[col["仕入値"]]:,} で埋めた')
+        if '最終確認日' in col:
+            r[col['最終確認日']] = today
         if diff:
             changed.append(f'{name}: ' + ' / '.join(diff))
 
-    gone = [r[col['商品名']] for k, r in by.items() if k not in found]
+    gone_keys = [k for k in by if k not in found]
+    gone = [by[k][col['商品名']] for k in gone_keys]
+
+    # 同じ晩に「消えた1件」と「増えた1件」があって、ブランドも単価も同じなら改名とみなす。
+    # 名前で照合しているので、放っておくと古い名前と新しい名前の2つに増えてしまう（2026-09-19 彩さん）
+    renamed = []
+    if '最終確認日' in col:
+        seen_before = [k for k in gone_keys if str(by[k][col['最終確認日']]).strip()]
+        for gk in list(seen_before):
+            g = by[gk]
+            cand = [ak for ak in added
+                    if by[ak][col['ブランド']] == g[col['ブランド']]
+                    and str(by[ak][col['税抜単価']]) == str(g[col['税抜単価']])]
+            if len(cand) != 1:
+                continue
+            ak = cand[0]; a_row = by[ak]
+            # 古い行が持っていた 税率・仕入値・表示順 を新しい行へ引き継ぐ
+            for h in ['税率', '仕入値', '表示順']:
+                if h in col and str(g[col[h]]).strip():
+                    a_row[col[h]] = g[col[h]]
+            renamed.append(f'{g[col["商品名"]]} → {a_row[col["商品名"]]}')
+            rows.remove(g); del by[gk]
+            gone_keys.remove(gk); gone.remove(g[col['商品名']])
+            added.remove(ak)
     print(f'うらかたさん {len(found)}件 / 商品マスタ {len(rows)}件')
-    print(f'  新しく足す: {len(added)}件' + ('  ' + ' / '.join(added[:8]) if added else ''))
+    if renamed:
+        print(f'  名前が変わったとみて つなぎ直した: {len(renamed)}件  ' + ' / '.join(renamed))
+    print(f'  新しく足す: {len(added)}件'
+          + ('  ' + ' / '.join(by[k][col['商品名']] for k in added[:8]) if added else ''))
     print(f'  中身を直す: {len(changed)}件')
     for c in changed[:10]:
         print('    ・' + c)

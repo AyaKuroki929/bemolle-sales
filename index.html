@@ -193,6 +193,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <!-- ══ 設定 ══ -->
 <section id="conf">
+  <div id="prodAlert"></div>
   <div class="card">
     <h2>商品マスタ<button class="btn sub sm" id="btnAddProd">＋追加</button></h2>
     <div id="prodList"></div>
@@ -539,6 +540,16 @@ function masterRow(type, label, shown, extra, key){
     <td><button class="del" onclick="delMaster('${type}','${esc(k)}')">削除</button></td></tr>`;
 }
 function renderMasters(){
+  // うらかたさんで見つからなくなった商品を知らせる（名前を変えると別商品として増えるため）
+  const newest = M.products.map(p=>p.seen||'').sort().pop() || '';
+  const lost = newest ? M.products.filter(p => (p.seen||'') !== newest) : [];
+  $('#prodAlert').innerHTML = lost.length
+    ? `<div class="card ng">うらかたさんで見つからない商品が ${lost.length}件あります
+       <div class="mini" style="margin-top:6px;color:var(--ink)">${lost.map(p=>esc(p.name)).join('・')}</div>
+       <div class="mini" style="margin-top:6px">うらかたさんで名前を変えたなら、ここの名前も同じに直してください。
+       もう扱っていない商品なら、そのままで問題ありません（過去の売上の税率に使います）。
+       ${esc(newest)} にうらかたさんを見たときの結果です</div></div>`
+    : '';
   $('#prodList').innerHTML = '<table>' + M.products.map(p =>
     masterRow('product','商品', (p.brand ? p.brand+'　' : '') + p.name,
               p.tax+'% / '+yen(p.price), p.name)).join('') + '</table>';

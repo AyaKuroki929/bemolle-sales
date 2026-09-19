@@ -238,7 +238,8 @@ function getMasters() {
   return {
     products: readSheet_(SH_PRODUCTS).filter(act).sort(byOrder).map(function (r) {
       return { name: r['商品名'], tax: Number(r['税率']) || 10, price: Number(r['税抜単価']) || 0,
-               brand: r['ブランド'] || '', cost: Number(r['仕入値']) || 0 };
+               brand: r['ブランド'] || '', cost: Number(r['仕入値']) || 0,
+               seen: r['最終確認日'] ? ymd_(r['最終確認日']) : '' };
     }),
     menus: readSheet_(SH_MENUS).filter(act).sort(byOrder).map(function (r) {
       return { name: r['メニュー名'], kind: r['区分'] || '対象外' };
