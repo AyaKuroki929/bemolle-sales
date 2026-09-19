@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       month:
-        description: '取り込む月（例 2026-08）。空なら今月'
+        description: '取り込む月（例 2026-08）。空なら今月と先月の両方'
         required: false
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,25 +24,37 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: 月を決める
+      # 今月と先月の両方を毎晩取り込む。
+      # GitHubの順番待ちで22時の実行が翌日にずれることがあり（2026-09-18に3時間53分の遅れ）、
+      # 今月だけだと月末の売上を取りこぼす。彩さんが翌月に入力した分も先月分として拾える。
+      - name: 取り込む月を決める
         id: m
         run: |
           M="${{ github.event.inputs.month }}"
-          if [ -z "$M" ]; then M=$(TZ=Asia/Tokyo date +%Y-%m); fi
-          echo "month=$M" >> $GITHUB_OUTPUT
-          echo "取り込む月: $M"
+          if [ -n "$M" ]; then
+            MONTHS="$M"
+          else
+            # 先月は「今月1日の前日」で出す。date -d '1 month ago' は3/31などで月がずれる
+            THIS=$(TZ=Asia/Tokyo date +%Y-%m)
+            PREV=$(TZ=Asia/Tokyo date -d "$(TZ=Asia/Tokyo date +%Y-%m-01) -1 day" +%Y-%m)
+            MONTHS="$THIS $PREV"
+          fi
+          echo "months=$MONTHS" >> $GITHUB_OUTPUT
+          echo "取り込む月: $MONTHS"
 
-      - name: うらかたさんから取ってくる
+      - name: うらかたさんから取ってきてスプレッドシートに入れる
         env:
           URAKATA_EMAIL: ${{ secrets.URAKATA_EMAIL }}
           URAKATA_PASSWORD: ${{ secrets.URAKATA_PASSWORD }}
-        run: python3 fetch_urakata.py "${{ steps.m.outputs.month }}" out
-
-      - name: スプレッドシートに入れる
-        env:
           GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
-        run: python3 import_sales.py "out/urakata_${{ steps.m.outputs.month }}.csv"
+        run: |
+          set -o pipefail
+          for M in ${{ steps.m.outputs.months }}; do
+            echo "───────── $M ─────────" | tee -a out.txt
+            python3 fetch_urakata.py "$M" out   | tee -a out.txt
+            python3 import_sales.py "out/urakata_$M.csv" | tee -a out.txt
+          done
 
       # ⚠️ このリポジトリは公開（GitHub Pages を使うため）。
       # お客様の名前が入るCSV・スクリーンショットは絶対に成果物として残さない。
@@ -50,24 +62,15 @@ jobs:
         if: failure()
         run: |
           python3 - <<'PY'
-          import os, re
-          for f in sorted(os.listdir('out')) if os.path.isdir('out') else []:
-              print('出力ファイル:', f, os.path.getsize(os.path.join('out', f)), 'bytes')
-          p = 'out/urakata_${{ steps.m.outputs.month }}.csv'
-          if os.path.exists(p):
-              lines = open(p, encoding='utf-8-sig').read().splitlines()
-              print('CSV 行数:', len(lines) - 1)
-              print('見出し:', lines[0] if lines else '(空)')
+          import os
+          if os.path.isdir('out'):
+              for f in sorted(os.listdir('out')):
+                  print('出力ファイル:', f, os.path.getsize(os.path.join('out', f)), 'bytes')
           PY
 
       - name: 失敗・要確認のときLINEで知らせる
         if: failure()
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-        run: |
-          if [ -n "$LINE_TOKEN" ]; then
-            curl -s -X POST https://api.line.me/v2/bot/message/broadcast \
-              -H "Authorization: Bearer $LINE_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"messages\":[{\"type\":\"text\",\"text\":\"🚨 うらかたさんの売上取り込み：取り込めなかったか、支払済みの金額が変わって要確認になりました\\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}]}"
-          fi
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 notify_line.py "🚨 うらかたさんの売上取り込み：取り込めなかったか、支払済みの金額が変わって要確認になりました"

@@ -16,7 +16,8 @@ def main():
     head = sys.argv[1] if len(sys.argv) > 1 else '🚨 エラーが起きました'
     body = ''
     if os.path.exists('out.txt'):
-        body = open('out.txt', encoding='utf-8').read().strip()[:900]
+        # 失敗は最後の方に出るので、末尾を見せる
+        body = open('out.txt', encoding='utf-8').read().strip()[-900:]
     if not body:
         body = '中身が取れませんでした（実行そのものが落ちた可能性があります）'
     text = head + '\n\n' + body
