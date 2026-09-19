@@ -410,6 +410,14 @@ async function delMaster(type, name){
 
 // ─── 支払入力 ───
 $('#btnPayLoad').onclick = loadPayQueue;
+// 会計の中の担当をそのまま言う。1人ならその名前、混ざっていれば全部、空があれば「担当なし」も出す
+function staffLine(s){
+  const names = (s.items||[]).map(it => it.staff || '担当なし');
+  const uniq = [...new Set(names)];
+  if(!uniq.length) return '担当 —';
+  if(uniq.length === 1) return '担当 ' + esc(uniq[0]);
+  return '担当 ' + uniq.map(esc).join('・');
+}
 let PAYQ = [], PAYSEQ = 0;
 async function loadPayQueue(){
   const month=$('#p_month').value, date=$('#p_date').value;
@@ -428,12 +436,15 @@ async function loadPayQueue(){
     let cur='';
     $('#payList').innerHTML = PAYQ.map((s,i)=>{
       const head = s.date!==cur ? (cur=s.date, `<h2 style="margin:16px 0 8px;font-size:15px;color:var(--rose-d)">${esc(s.date)}</h2>`) : '';
-      const items = s.items.map(it=>`<div class="mini">・${esc(it.name)}${it.qty>1?' ×'+it.qty:''} ${yen(it.net)}（${it.tax}%）</div>`).join('');
+      // 担当はうらかたさんのとおり、明細ごとに出す（会計でひとつにまとめない）
+      const items = s.items.map(it=>`<div class="mini">・${esc(it.name)}${it.qty>1?' ×'+it.qty:''} ${yen(it.net)}（${it.tax}%）`
+        + (it.staff ? ` <span style="color:var(--rose-d)">${esc(it.staff)}</span>` : ` <span class="ng">担当なし</span>`)
+        + '</div>').join('');
       const done = s.payState==='入力済';
       const paid = s.payments.map(p=>`<span class="chip">${esc(p.method)} ${yen(p.amount)}${p.status==='未収'?' 後日':''}</span>`).join('');
       return head + `<div class="saleitem" id="pc_${i}" ${done?'style="opacity:.55"':''}>
         <div class="hd"><div><div class="nm">${esc(s.customer||'（名前なし）')}</div>
-          <div class="mini">担当 ${esc(s.staff||'—')}</div></div>
+          <div class="mini">${staffLine(s)}</div></div>
           <div style="text-align:right"><div><b>${yen(s.gross)}</b></div><div class="mini">税抜 ${yen(s.net)}</div></div></div>
         <div style="margin-top:6px">${items}</div>
         ${done?`<div style="margin-top:8px">${paid} <button class="btn ghost sm" onclick="openSplit(${i})">直す</button></div>`

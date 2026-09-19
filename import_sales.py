@@ -161,7 +161,11 @@ def main():
         d = d.replace('/', '-')
         net = sum(i['税抜'] for i in its)
         gross = sum(round(i['税抜'] * (1 + i['税率'] / 100)) for i in its)
-        staff = collections.Counter(i['スタッフ'] for i in its if i['スタッフ']).most_common(1)
+        # 会計の担当者は、明細の担当がひとつに揃っているときだけ入れる。
+        # 揃っていなければ空にする（代表を1人選ぶと、担当なしの明細まで
+        # その人がやったように見えてしまう。2026-09-19 彩さん指摘）
+        names = {i['スタッフ'] or '' for i in its}
+        one = list(names)[0] if len(names) == 1 else ''
         o = prev.pop((d, cust), None)
         if o:
             sid, apo, memo, made, state = o[0], o[4], o[5], o[9], o[8]
@@ -174,7 +178,7 @@ def main():
             sid = 'S' + d.replace('-', '') + f'{used_seq[d.replace("-", "")]:03d}'
             apo, memo, made, state = '', '', now, '未入力' if gross else '支払なし'
             added += 1
-        sales.append([sid, d, cust, staff[0][0] if staff else '', apo, memo, net, gross, state, made, now])
+        sales.append([sid, d, cust, one, apo, memo, net, gross, state, made, now])
         total += net
         for m, i in enumerate(its, 1):
             details.append([f'{sid}-{m:02d}', sid, d, i['種別'], i['名称'], i['数量'],
