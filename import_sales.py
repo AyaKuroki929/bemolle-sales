@@ -181,12 +181,8 @@ def main():
                             i['区分'], i['税率'], i['税抜'], round(i['税抜'] * (1 + i['税率'] / 100)),
                             i['スタッフ'], False, i['備考']])
 
-    # うらかたさんから消えたのに支払が入っている会計は消さずに残す
-    for key, o in prev.items():
-        if o[0] in paid_ids:
-            o[8] = '要確認'; sales.append(o)
-            changed.append(f'{o[0]} うらかたさんから消えたが入金あり')
-            details += [r for r in old_det if r[1] == o[0]]
+    # うらかたさんから消えた会計は、支払方法が入っていてもこちらでも消す（2026-09-19 彩さん）
+    gone = [o[0] for o in prev.values()]
 
     sales.sort(key=lambda r: (r[1], r[0]))
     details.sort(key=lambda r: (r[2], r[0]))
@@ -202,13 +198,23 @@ def main():
     if dry:
         for s in sales[:5]: print('  ', s[0], s[1], s[6:9])   # 名前は出さない（公開ログ対策）
         return
-    for name in ['会計', '明細']:
+    # 会計が消えたら、その入金も残さない（集計に幽霊が残らないように）
+    live = {r[0] for r in allsales}
+    old_pay = [pad(r, 8) for r in read(ssid, at, '入金') if r and r[0]]
+    allpay = [r for r in old_pay if r[1] in live]
+    dropped = len(old_pay) - len(allpay)
+
+    for name in ['会計', '明細', '入金']:
         api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/' +
             urllib.parse.quote(f"'{name}'!A2:Z") + ':clear', at, 'POST', {})
     api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values:batchUpdate', at, 'POST',
         {'valueInputOption': 'RAW',
          'data': [{'range': "'会計'!A2", 'values': allsales},
-                  {'range': "'明細'!A2", 'values': alldet}]})
+                  {'range': "'明細'!A2", 'values': alldet}] +
+                 ([{'range': "'入金'!A2", 'values': allpay}] if allpay else [])})
+    if gone:
+        print(f'うらかたさんから消えた会計 {len(gone)}件を、こちらからも消しました'
+              + (f'（入金 {dropped}件も一緒に）' if dropped else ''))
     print(f'書き込みました 会計{len(allsales)}件 / 明細{len(alldet)}件: '
           'https://docs.google.com/spreadsheets/d/' + ssid + '/edit')
     if changed:

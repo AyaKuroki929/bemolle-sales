@@ -2,7 +2,7 @@ name: うらかたさんの売上を取り込む
 
 on:
   schedule:
-    - cron: '0 13 * * *'      # 毎日22:00 JST（営業終了後）
+    - cron: '0 15 * * *'      # 毎日0:00 JST（その日が終わってから・2026-09-19 彩さん）
   workflow_dispatch:
     inputs:
       month:
