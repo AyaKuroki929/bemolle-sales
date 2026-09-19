@@ -33,7 +33,7 @@ jobs:
           SHEET_ID: ${{ secrets.SHEET_ID }}
         run: |
           set -o pipefail
-          python3 check_teikibin.py "${{ steps.m.outputs.month }}" | tee out.txt
+          python3 check_teikibin.py "${{ steps.m.outputs.month }}" 2>&1 | tee out.txt
 
       # 合っていれば無音。食い違ったときだけ知らせる
       - name: 食い違いをLINEで知らせる

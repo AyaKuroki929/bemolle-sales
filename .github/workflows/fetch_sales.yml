@@ -52,7 +52,7 @@ jobs:
           SHEET_ID: ${{ secrets.SHEET_ID }}
         run: |
           set -o pipefail
-          python3 fetch_items.py | tee -a out.txt
+          python3 fetch_items.py 2>&1 | tee -a out.txt
 
       - name: うらかたさんから取ってきてスプレッドシートに入れる
         env:
@@ -64,8 +64,8 @@ jobs:
           set -o pipefail
           for M in ${{ steps.m.outputs.months }}; do
             echo "───────── $M ─────────" | tee -a out.txt
-            python3 fetch_urakata.py "$M" out   | tee -a out.txt
-            python3 import_sales.py "out/urakata_$M.csv" | tee -a out.txt
+            python3 fetch_urakata.py "$M" out 2>&1 | tee -a out.txt
+            python3 import_sales.py "out/urakata_$M.csv" 2>&1 | tee -a out.txt
           done
 
       # ⚠️ このリポジトリは公開（GitHub Pages を使うため）。
