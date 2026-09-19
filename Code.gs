@@ -640,7 +640,11 @@ function getStocks(params) {
     return { id: r['払出ID'], date: ymd_(r['日付']), name: r['商品名'],
              qty: Number(r['数量']) || 0, use: r['用途'],
              amount: Number(r['金額']) || 0, memo: r['メモ'] };
-  }).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  }).sort(function (a, b) {
+    // 今日に近い日を一番上に（同じ日の中は入れた順）
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return String(a.id) < String(b.id) ? -1 : 1;
+  });
 }
 
 function deleteStock(d) {
