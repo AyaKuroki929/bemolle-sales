@@ -223,7 +223,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 const API_URL = 'https://script.google.com/macros/s/AKfycbw5r9qSAxC613fnqJOdlRsj1ORblpDGGf_IhuYPmJZwfk4kfOGqBxJ4D-OWBicezim7/exec';
 
 let M = { products: [], menus: [], staff: [] };
-let PAY_METHODS = ['現金','JMS','Square','振込','HPポイント','その他'];
+let PAY_METHODS = ['現金','JMS','Square','振込','ローン','HPBポイント'];
+const QUICK_HIDE = ['HPBポイント'];   // ボタンには出さず「分けて払う」の中だけに出す
 let STOCK_USES = ['サロン使用','黒木購入'];
 let editing = null;   // 編集中の会計ID
 let createdAt = '';
@@ -651,9 +652,9 @@ async function loadPayQueue(){
         <div style="margin-top:6px">${items}</div>
         ${done?`<div style="margin-top:8px">${paid} <button class="btn ghost sm" onclick="openSplit(${i})">直す</button></div>`
         :`<div class="row" style="margin-top:10px">
-            ${PAY_METHODS.filter(m=>m!=='その他').map(m=>`<button class="btn sm" style="flex:1" onclick="quickPay(${i},'${m}')">${m}</button>`).join('')}
+            ${PAY_METHODS.filter(m=>!QUICK_HIDE.includes(m)).map(m=>`<button class="btn sm" style="flex:1" onclick="quickPay(${i},'${m}')">${m}</button>`).join('')}
           </div>
-          <button class="btn ghost sm wide" style="margin-top:6px" onclick="openSplit(${i})">分けて払う・後日にする</button>`}
+          <button class="btn ghost sm wide" style="margin-top:6px" onclick="openSplit(${i})">分けて払う・後日支払う</button>`}
         <div id="sp_${i}"></div>
       </div>`;
     }).join('');
