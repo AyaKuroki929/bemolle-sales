@@ -217,8 +217,8 @@ def main():
               + (f'（入金 {dropped}件も一緒に）' if dropped else ''))
     print(f'書き込みました 会計{len(allsales)}件 / 明細{len(alldet)}件: '
           'https://docs.google.com/spreadsheets/d/' + ssid + '/edit')
-    if changed:
-        sys.exit(9)   # 要確認が出たら失敗扱い＝LINEに飛ばす
+    # 要確認でLINEは飛ばさない（2026-09-19 彩さん「この通知不要」）。
+    # 画面の支払入力に「要確認」として出てくるので、そこで直す
 
 if __name__ == '__main__':
     main()

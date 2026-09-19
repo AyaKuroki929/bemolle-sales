@@ -73,4 +73,4 @@ jobs:
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python3 notify_line.py "🚨 うらかたさんの売上取り込み：取り込めなかったか、支払済みの金額が変わって要確認になりました"
+        run: python3 notify_line.py "🚨 うらかたさんの売上が取り込めませんでした"
