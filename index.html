@@ -449,6 +449,19 @@ async function loadPayQueue(){
       `<div class="card ng">${esc(e.message)}<br><button class="btn ghost sm" style="margin-top:8px" onclick="loadPayQueue()">やり直す</button></div>`;
   }finally{ stopNote(); }
 }
+// 返事が返ってこなくても、書き込み自体は通っていることがある。
+// 「保存できませんでした」と出す前に、本当に入っていないかを見に行く（2026-09-19 彩さん）
+async function didItSave(id){
+  for(let n=0; n<2; n++){
+    try{
+      const sale = await api('getSale', {}, { id });
+      if(sale && sale.payments && sale.payments.length) return true;
+      return false;
+    }catch(e){ await new Promise(r=>setTimeout(r, 3000)); }   // 確認も失敗したら1回だけ待って再確認
+  }
+  return null;   // 確かめられなかった
+}
+
 async function quickPay(i, method){
   const s=PAYQ[i];
   if(s.payState==='入力済') return;
@@ -465,11 +478,22 @@ async function quickPay(i, method){
   try{
     await api('savePayments', { id:s.id, payments:[{method, amount:s.gross, status:'入金済'}] });
   }catch(e){
+    const ck=$('#ck_'+i);
+    if(ck) ck.innerHTML = '<span class="mini">保存できたか確認しています…</span>';
+    const saved = await didItSave(s.id);
+    if(saved === true){                       // 返事が来なかっただけで、入っていた
+      if(ck) ck.innerHTML = `<span class="chip">${esc(method)} ${yen(s.gross)}</span> <span class="ok">✓</span>`;
+      toast('保存できていました', 2500);
+      return;
+    }
     s.payState='未入力';
     card.style.opacity='1';
-    const ck=$('#ck_'+i); if(ck) ck.innerHTML=`<span class="ng">保存できませんでした：${esc(e.message)}</span>
+    const msg = (saved === false) ? '保存できませんでした' : '保存できたか確認できませんでした';
+    if(ck) ck.innerHTML = `<span class="ng">${msg}：${esc(e.message)}</span>
       <button class="btn sm" onclick="loadPayQueue()">やり直す</button>`;
-    toast('保存できませんでした', 3000);
+    const rest2=PAYQ.filter(x=>x.payState!=='入力済').length;
+    $('#p_count').textContent=`${PAYQ.length}件 / 未入力 ${rest2}件`;
+    toast(msg, 3000);
   }
 }
 function openSplit(i){
@@ -512,7 +536,12 @@ async function saveSplit(i){
     method:w.querySelector('.sm_m').value, amount:Number(w.querySelector('.sm_a').value||0),
     status:w.querySelector('.sm_l').checked?'未収':'入金済'})).filter(p=>p.amount);
   try{ await api('savePayments',{id:s.id, payments:pays}); toast('保存しました'); loadPayQueue(); }
-  catch(e){ toast(e.message); }
+  catch(e){
+    toast('保存できたか確認しています…', 4000);
+    const saved = await didItSave(s.id);
+    if(saved === true){ toast('保存できていました', 2500); loadPayQueue(); return; }
+    toast((saved === false ? '保存できませんでした：' : '確認できませんでした：') + e.message, 4000);
+  }
 }
 
 // ─── 日当 ───
