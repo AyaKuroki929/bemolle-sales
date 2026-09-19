@@ -29,7 +29,7 @@ label{display:block;font-size:12px;color:var(--sub);margin:0 0 3px;font-weight:6
 input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;
   font-size:16px;background:#fff;color:var(--ink);font-family:inherit}
 input:focus,select:focus{outline:2px solid var(--rose);outline-offset:-1px}
-.row{display:flex;gap:8px;flex-wrap:wrap}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
 .row>div{flex:1;min-width:110px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:9px;
   padding:11px 16px;font-size:15px;font-weight:600;cursor:pointer;background:var(--rose);color:#fff}
@@ -38,6 +38,8 @@ input:focus,select:focus{outline:2px solid var(--rose);outline-offset:-1px}
 .btn.ghost{background:#f2ece7;color:var(--sub)}
 .btn.warn{background:var(--warn)}
 .btn.sm{padding:6px 11px;font-size:13px;border-radius:7px}
+/* 入力欄と横に並べるボタンは、入力欄と同じ高さにする（iPadでのズレ対策） */
+.row>div>.btn.sm{height:40px;padding:0 16px}
 .btn.wide{width:100%;padding:14px}
 .line{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:#fdfbf9}
 .line .tag{display:inline-block;background:var(--rose);color:#fff;font-size:11px;font-weight:700;
@@ -91,7 +93,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <div class="row">
       <div><label>月</label><input type="month" id="p_month"></div>
       <div><label>日（空なら月まとめて）</label><input type="date" id="p_date"></div>
-      <div style="flex:0 0 auto;padding-top:18px"><button class="btn sm" id="btnPayLoad">表示</button></div>
+      <div style="flex:0 0 auto"><button class="btn sm" id="btnPayLoad">表示</button></div>
     </div>
     <label style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:13px;color:var(--ink)">
       <input type="checkbox" id="p_all" style="width:auto"> 入力済みも表示する</label>
@@ -216,6 +218,15 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 const yen = n => '¥' + (Number(n)||0).toLocaleString();
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+// 押したあと無反応に見えないよう、終わるまで砂時計を回す（2026-09-19 彩さん）
+async function busy(btn, label, fn){
+  const was = btn.innerHTML, wasDis = btn.disabled;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin"></span> ${label}`;
+  try{ return await fn(); }
+  finally{ btn.innerHTML = was; btn.disabled = wasDis; }
+}
+
 // 5秒たっても返ってこないとき、通信は切らずに「やり直す」を添える。
 // Googleのサーバーは立ち上がりに30秒以上かかることがあるので、待つか押し直すかは彩さんが選ぶ
 function slowNote(el, retry){
@@ -317,22 +328,33 @@ $('#btnSaveStock').onclick = async () => {
     if(!name) return toast('商品を入れてください');
     lines = [{ name, qty: Number($('#k_qty').value)||1 }];
   }
-  const btn=$('#btnSaveStock'); btn.disabled=true;
-  const ng=[];
-  for(const l of lines){
-    try{ await api('saveStock', { date, use, memo, name:l.name, qty:l.qty }); }
-    catch(e){ ng.push(l.name+'（'+e.message+'）'); }
+  const btn=$('#btnSaveStock');
+  const was=btn.textContent;
+  btn.disabled=true;
+  btn.innerHTML = `<span class="spin"></span> 記録しています…（${lines.length}件）`;
+  try{
+    await api('saveStocks', { date, use, memo, lines });
+    toast(lines.length+'件を記録しました');
+    KLINES=[]; $('#k_name').value=''; $('#k_qty').value=1; $('#k_memo').value='';
+  }catch(e){
+    // 返事が返ってこないだけのことがあるので、入っていないか見に行く
+    btn.innerHTML = `<span class="spin"></span> 記録できたか確認しています…`;
+    let saved=false;
+    try{
+      const rows = await api('getStocks', {}, { date });
+      saved = lines.every(l => rows.some(r => r.name===l.name && r.use===use));
+    }catch(e2){}
+    if(saved){ toast('記録できていました'); KLINES=[]; $('#k_name').value=''; $('#k_qty').value=1; $('#k_memo').value=''; }
+    else { toast('記録できませんでした：'+e.message, 4000); }
+  }finally{
+    btn.disabled=false; btn.textContent=was;
+    renderKLines(); loadStocks();
   }
-  btn.disabled=false;
-  if(ng.length){ toast(ng.length+'件が記録できませんでした：'+ng[0], 4000); }
-  else { toast(lines.length+'件を記録しました'); KLINES=[]; $('#k_name').value=''; $('#k_qty').value=1; $('#k_memo').value=''; }
-  renderKLines();
-  loadStocks();
 };
 $('#k_brand').onchange = () => { $('#k_name').value=''; fillProdList(); };
 $('#k_name').oninput = fillProdList;
 renderKLines();
-$('#btnReloadStock').onclick = loadStocks;
+$('#btnReloadStock').onclick = () => busy($('#btnReloadStock'), '…', loadStocks);
 async function loadStocks(){
   const month = ($('#k_date').value || new Date().toISOString().slice(0,10)).slice(0,7);
   try{
@@ -351,7 +373,7 @@ async function removeStock(id){
 }
 
 // ─── 未収 ───
-$('#btnReloadUnpaid').onclick = loadUnpaid;
+$('#btnReloadUnpaid').onclick = () => busy($('#btnReloadUnpaid'), '…', loadUnpaid);
 async function loadUnpaid(){
   $('#unpaidList').innerHTML = '<div class="card mini">読み込み中…</div>';
   const stopNote = slowNote($('#unpaidList'), loadUnpaid);
@@ -383,7 +405,7 @@ async function settle(btn, id){
 
 // ─── 集計 ───
 let SAL={staff:[]};
-$('#btnSum').onclick = loadSummary;
+$('#btnSum').onclick = () => busy($('#btnSum'), '集計中…', loadSummary);
 async function loadSummary(){
   const month = $('#s_month').value;
   if(!month) return toast('月を選んでください');
@@ -446,7 +468,7 @@ $('#btnCsv').onclick = async () => {
 
 // ─── 棚卸し ───
 let TAKE = null;
-$('#btnTakeReload').onclick = loadStocktake;
+$('#btnTakeReload').onclick = () => busy($('#btnTakeReload'), '読み込み中…', loadStocktake);
 $('#btnTakeCsv').onclick = () => {
   if(!TAKE) return toast('先に読み込んでください');
   const q = v => /[",\n]/.test(String(v)) ? '"'+String(v).replace(/"/g,'""')+'"' : String(v);
@@ -549,7 +571,7 @@ async function delMaster(type, name){
 }
 
 // ─── 支払入力 ───
-$('#btnPayLoad').onclick = loadPayQueue;
+$('#btnPayLoad').onclick = () => busy($('#btnPayLoad'), '読み込み中…', loadPayQueue);
 // 会計の中の担当をそのまま言う。1人ならその名前、混ざっていれば全部、空があれば「担当なし」も出す
 function staffLine(s){
   const names = (s.items||[]).map(it => it.staff || '担当なし');
@@ -696,7 +718,7 @@ async function saveSplit(i){
 }
 
 // ─── 日当 ───
-$('#btnSaveAllow').onclick = async () => {
+$('#btnSaveAllow').onclick = () => busy($('#btnSaveAllow'), '登録しています…', async () => {
   const d = { date:$('#a_date').value, staff:$('#a_staff').value,
               amount:Number(String($('#a_amount').value).replace(/[^0-9-]/g,''))||0,
               memo:$('#a_memo').value.trim() };
@@ -704,8 +726,8 @@ $('#btnSaveAllow').onclick = async () => {
   try{ await api('saveAllowance', d); toast('登録しました');
     $('#a_amount').value=''; $('#a_memo').value=''; loadAllowances();
   }catch(e){ toast(e.message); }
-};
-$('#btnReloadAllow').onclick = loadAllowances;
+});
+$('#btnReloadAllow').onclick = () => busy($('#btnReloadAllow'), '…', loadAllowances);
 $('#a_month').onchange = loadAllowances;
 async function loadAllowances(){
   const month = $('#a_month').value;

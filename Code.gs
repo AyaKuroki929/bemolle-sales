@@ -122,6 +122,7 @@ function handle(params, body) {
       case 'getAllowances':   result = getAllowances(params);      break;
       case 'deleteAllowance': result = deleteAllowance(d);         break;
       case 'saveStock':       result = saveStock(d);               break;
+      case 'saveStocks':      result = saveStocks(d);              break;
       case 'getStocks':       result = getStocks(params);          break;
       case 'deleteStock':     result = deleteStock(d);             break;
       case 'getMasters':      result = getMasters();               break;
@@ -645,6 +646,25 @@ function getStocks(params) {
     // 今日に近い日を一番上に（同じ日の中は入れた順）
     if (a.date !== b.date) return a.date < b.date ? 1 : -1;
     return String(a.id) < String(b.id) ? -1 : 1;
+  });
+}
+
+/** 同じ日・同じ用途で何個も出すとき用。1回の通信でまとめて書く（2026-09-19 彩さん） */
+function saveStocks(d) {
+  return withLock_(function () {
+    const date = ymd_(d.date);
+    if (!date) throw new Error('日付を入れてください');
+    if (STOCK_USES.indexOf(d.use) === -1) throw new Error('用途は サロン使用 か 黒木購入');
+    const lines = (d.lines || []).filter(function (l) { return l && String(l.name).trim(); });
+    if (!lines.length) throw new Error('商品を1つ以上入れてください');
+    const s = sh(SH_STOCK);
+    const now = nowStr_();
+    const rows = lines.map(function (l, i) {
+      return [newId_('K') + i, date, String(l.name).trim(), Number(l.qty || 1),
+              d.use, 0, d.memo || '', now];
+    });
+    s.getRange(s.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    return { saved: rows.length };
   });
 }
 
