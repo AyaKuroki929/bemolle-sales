@@ -478,6 +478,8 @@ async function loadStocktake(){
         <div class="tot"><span>10%対象</span><span>${yen(t10.total)}<span class="mini">（${t10.qty}点）</span></span></div>
         <div class="tot"><span>総合計（税抜）</span><b>${yen(t.total)}</b></div>
         <div class="mini" style="margin-top:6px">在庫のある商品 ${t.kinds}種類</div>
+        ${t.minus && t.minus.length ? `<div class="mini ng" style="margin-top:6px">
+          在庫がマイナスの商品 ${t.minus.length}件は0として数えています：${esc(t.minus.join('・'))}</div>` : ''}
       </div>
       <div class="card">
       <h2 style="font-size:14px">税率別</h2>

@@ -980,14 +980,18 @@ function getStocktake() {
   const rows = readSheet_(SH_PRODUCTS).filter(function (r) {
     return String(r['商品名']).trim() && r['有効'] !== false && r['有効'] !== 'FALSE';
   }).map(function (r) {
-    const qty  = Number(r['在庫数']) || 0;
+    // マイナス在庫は0として数える（2026-09-19 彩さん）。うらかたさん側の数はそのまま出す
+    const raw  = Number(r['在庫数']) || 0;
+    const qty  = raw < 0 ? 0 : raw;
     const cost = Number(r['仕入値']) || 0;
     return { name: r['商品名'], brand: r['ブランド'] || '', tax: Number(r['税率']) || 10,
-             price: Number(r['税抜単価']) || 0, cost: cost, qty: qty, total: cost * qty };
+             price: Number(r['税抜単価']) || 0, cost: cost, qty: qty, raw: raw, total: cost * qty };
   });
   const byTax = {}, byBrand = {};
   let total = 0, kinds = 0;
+  const minus = [];
   rows.forEach(function (r) {
+    if (r.raw < 0) minus.push(r.name + '（' + r.raw + '）');
     if (r.qty === 0) return;
     kinds++;
     total += r.total;
@@ -1006,7 +1010,7 @@ function getStocktake() {
     if (String(r['キー']) === '在庫取込日時') stockAt = String(r['値'] || '');
   });
   return { date: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'), stockAt: stockAt,
-           total: total, kinds: kinds, byTax: byTax, byBrand: byBrand, items: rows };
+           total: total, kinds: kinds, byTax: byTax, byBrand: byBrand, minus: minus, items: rows };
 }
 
 function setupTriggers() {
