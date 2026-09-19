@@ -292,9 +292,11 @@ async function removeStock(id){
 // ─── 未収 ───
 $('#btnReloadUnpaid').onclick = loadUnpaid;
 async function loadUnpaid(){
+  $('#unpaidList').innerHTML = '<div class="card mini">読み込み中…</div>';
+  const stopNote = slowNote($('#unpaidList'), loadUnpaid);
   try{
     const rows = await api('getUnpaid');
-    if(!rows.length){ $('#unpaidList').innerHTML = '<div class="mini">未収はありません</div>'; return; }
+    if(!rows.length){ $('#unpaidList').innerHTML = '<div class="card ok">未収はありません 🎉</div>'; return; }
     $('#unpaidList').innerHTML = rows.map(r => `<div class="line">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div><div class="nm">${esc(r.customer||'（名前なし）')} <span class="mini">${esc(r.date)}</span></div>
@@ -305,7 +307,10 @@ async function loadUnpaid(){
         <div><input type="date" class="u_d" value="${new Date().toISOString().slice(0,10)}"></div>
         <div style="flex:0 0 auto"><button class="btn sm" onclick="settle(this,'${r.id}')">入金済にする</button></div>
       </div></div>`).join('');
-  }catch(e){ $('#unpaidList').innerHTML = `<div class="ng">${esc(e.message)}</div>`; }
+  }catch(e){
+    $('#unpaidList').innerHTML = `<div class="card ng">${esc(e.message)}<br>
+      <button class="btn ghost sm" style="margin-top:8px" onclick="loadUnpaid()">やり直す</button></div>`;
+  }finally{ stopNote(); }
 }
 async function settle(btn, id){
   const box = btn.closest('.line');
