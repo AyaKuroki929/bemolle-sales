@@ -97,15 +97,28 @@ def scrape():
         try:
             page.goto(BASE, wait_until='networkidle', timeout=60000)
             page.wait_for_timeout(3000)
-            for sel, val in [('input[type="email"]', email), ('input[type="password"]', password)]:
-                el = page.query_selector(sel)
-                if el:
-                    el.fill(val)
-            for label in ['ログイン', 'ログインする']:
-                if click_text(page, label):
+
+            # ── ログイン（売上を取る方と同じ手順。すでにログイン済みなら飛ばす）
+            if not page.query_selector('text=売上管理'):
+                for label in ['ログイン', 'ログイン / 新規登録', 'Log in', 'サインイン']:
+                    if click_text(page, label):
+                        page.wait_for_timeout(2500)
+                        break
+                mail = page.query_selector('input[type=email]') or page.query_selector('input[name*=mail i]')
+                pw = page.query_selector('input[type=password]')
+                if not (mail and pw):
+                    page.screenshot(path='out/items_login_error.png', full_page=True)
+                    sys.exit('ログイン欄が見つかりませんでした')
+                mail.fill(email)
+                pw.fill(password)
+                pw.press('Enter')
+                page.wait_for_timeout(6000)
+                if not page.query_selector('text=売上管理'):
+                    for label in ['ログイン', 'Log in', '送信']:
+                        if click_text(page, label):
+                            break
                     page.wait_for_timeout(6000)
-                    break
-            if not page.query_selector('text=商品管理') and not page.query_selector('text=売上管理'):
+            if not page.query_selector('text=売上管理'):
                 page.screenshot(path='out/items_login_error.png', full_page=True)
                 sys.exit('ログインできませんでした')
 
