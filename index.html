@@ -43,15 +43,15 @@ input:focus,select:focus{outline:2px solid var(--rose);outline-offset:-1px}
 /* 入力欄と横に並べるボタンは、入力欄と同じ高さにする（iPadでのズレ対策） */
 .row>div>.btn.sm{height:40px;padding:0 16px}
 .row>div.btnwrap{flex:0 0 auto}
-/* iPadは日付の入力欄が横に広がるので、狭いときはボタンを次の行に出す（重なり防止） */
-@media (max-width:900px){
-  .row>div.btnwrap{flex:1 0 100%}
-  .row>div.btnwrap>.btn.sm{width:100%}
+/* iPadとスマホでは、欄を横に並べずに全部縦に積む。
+   iOSの日付欄は横に広がろうとして隣と重なるため（2026-09-21 iPadで在庫払出・日当が重なった） */
+@media (max-width:1100px){
+  .row>div{flex:1 0 100%!important}
+  .row>div>.btn.sm{width:100%}
 }
-/* スマホは横に2つ並べると入りきらないので、縦に積む */
-@media (max-width:600px){
-  .row>div{flex:1 0 100%}
-}
+/* iOSの日付・数値の欄が中身の幅で広がるのを止める */
+input[type=date],input[type=month],input[type=number]{
+  -webkit-appearance:none;appearance:none;min-width:0;display:block;width:100%}
 input,select{max-width:100%}
 .btn.wide{width:100%;padding:14px}
 .line{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:#fdfbf9}
