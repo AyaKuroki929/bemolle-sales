@@ -992,7 +992,7 @@ function exportCsv(month) {
     .forEach(function (r) {
       const h = saleById[String(r['会計ID'])] || {};
       rows.push([ymd_(r['日付']), h['顧客名'] || '', r['担当者'] || '', r['種別'], r['名称'],
-                 Number(r['数量']) || 1, Number(r['税率']) || 0,
+                 Number(r['数量']) || 1, (Number(r['税率']) || 0) + '%',
                  yen_(r['税抜金額']), yen_(r['税込金額']),
                  (payBySale[String(r['会計ID'])] || []).join(' / ')]);
     });
