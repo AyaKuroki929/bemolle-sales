@@ -179,7 +179,7 @@ def main():
     # 毎月ここに溜めていく（2026-09-21 彩さん「どこかのフォルダに入れていってほしい」）
     out_dir = (Path.home() / 'Library/Mobile Documents/com~apple~CloudDocs/紫妃彩/Bemolle/スタッフ/業務委託/報酬明細')
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f'{staff.replace("中田","")}さん_{month[:4]}年{int(month[5:])}月_報酬明細.pdf'
+    out = out_dir / f'{staff}_{month[:4]}年{int(month[5:])}月_報酬明細.pdf'
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         b = p.chromium.launch()
