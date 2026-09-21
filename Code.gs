@@ -978,8 +978,9 @@ function exportCsv(month) {
     if (!payBySale[k]) payBySale[k] = [];
     // 後日もらった分は、もらった日も出す（例：振込 ¥20,000（9/25入金)）
     const paid = ymd_(p['入金日']);
+    // 「入金」だとカード払いに合わないので「支払」（2026-09-21 彩さん）
     const when = (p['状態'] === '未収') ? '（未収）'
-               : (paid ? '（' + paid.slice(5).replace('-', '/') + '入金）' : '');
+               : (paid ? '（' + paid.slice(5).replace('-', '/') + '支払）' : '');
     payBySale[k].push((p['支払方法'] || '') + ' ' + yen_(p['金額']) + when);
   });
 
