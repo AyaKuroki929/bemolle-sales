@@ -4,7 +4,7 @@
   python3 salary_slip.py 2026-08 中田有加 [--extra 2026-08-06:1200:プラペン研修2時間（600円×2）]
 
 売上日報のウェブアプリ（getSalary / getIncentive）とタイムカードから材料を取り、
-何に対していくら出ているかを1行ずつ並べる。出力は ~/Downloads。
+何に対していくら出ているかを1行ずつ並べる。出力は iCloud の 業務委託／報酬明細。
 --extra は、システムにまだ入っていない特別日当を手で足すとき用（無ければ不要）。
 """
 import json, os, sys, urllib.request, urllib.parse, collections, datetime, re
@@ -175,7 +175,11 @@ def main():
     tc = timecard(staff, month)
 
     html = build_html(staff, month, sal, inc, tc, extras)
-    out = Path.home() / 'Downloads' / f'{staff.replace("中田","")}さん_{month[:4]}年{int(month[5:])}月_報酬明細.pdf'
+    # 出力先は iCloud の「業務委託／報酬明細」（有加報酬.numbers と同じ場所・iPadからも見える）。
+    # 毎月ここに溜めていく（2026-09-21 彩さん「どこかのフォルダに入れていってほしい」）
+    out_dir = (Path.home() / 'Library/Mobile Documents/com~apple~CloudDocs/紫妃彩/Bemolle/スタッフ/業務委託/報酬明細')
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f'{staff.replace("中田","")}さん_{month[:4]}年{int(month[5:])}月_報酬明細.pdf'
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         b = p.chromium.launch()
