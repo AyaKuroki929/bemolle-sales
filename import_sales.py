@@ -114,6 +114,37 @@ def load(bussan_csv, sc_csv):
                       '税率': 10, '税抜': int(r['金額'] or 0), '備考': ''})
     return items
 
+def backup_sheet(ssid, at, keep_days=7):
+    """スプレッドシートをGoogleドライブに丸ごとコピーして控えにする。古い控えは消す"""
+    try:
+        today = (datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime('%Y-%m-%d')
+        folder_name = '売上日報の控え'
+        q = urllib.parse.quote(f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false")
+        found = api(f'https://www.googleapis.com/drive/v3/files?q={q}&fields=files(id)', at).get('files', [])
+        if found:
+            fid = found[0]['id']
+        else:
+            fid = api('https://www.googleapis.com/drive/v3/files?fields=id', at, 'POST',
+                      {'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder'})['id']
+        q2 = urllib.parse.quote(f"'{fid}' in parents and trashed=false")
+        olds = api(f'https://www.googleapis.com/drive/v3/files?q={q2}&fields=files(id,name)', at).get('files', [])
+        name = f'ベモーレ売上日報_控え_{today}'
+        if not any(f['name'] == name for f in olds):          # 1日1つだけ（同じ日に何度走っても増やさない）
+            api(f'https://www.googleapis.com/drive/v3/files/{ssid}/copy?fields=id', at, 'POST',
+                {'name': name, 'parents': [fid]})
+            olds.append({'id': '', 'name': name})
+        # 古い控えを消す
+        limit = (datetime.datetime.utcnow() + datetime.timedelta(hours=9) - datetime.timedelta(days=keep_days)).strftime('%Y-%m-%d')
+        removed = 0
+        for f in olds:
+            d = f['name'].split('_')[-1]
+            if d < limit and f['id']:
+                api(f'https://www.googleapis.com/drive/v3/files/{f["id"]}', at, 'PATCH', {'trashed': True}); removed += 1
+        print(f'控えを取りました（{today}・{len(olds) - removed}日分を保管）')
+    except Exception as e:
+        # 控えが取れなくても取り込みは続ける。ただし理由は残す
+        print(f'⚠️ 控えが取れませんでした（{e}）。取り込みは続けます')
+
 def read(ssid, at, name):
     u = (f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/'
          + urllib.parse.quote(f"'{name}'!A2:Z"))
@@ -185,6 +216,33 @@ def main():
                             i['区分'], i['税率'], i['税抜'], round(i['税抜'] * (1 + i['税率'] / 100)),
                             i['スタッフ'], False, i['備考']])
 
+    # ③ うらかたさんでお客様の名前を直しただけなら、支払方法を引き継ぐ（2026-09-21 彩さん「これで」）。
+    #    同じ日に「消えた会計」と「増えた会計」があり、明細（商品・数量・税抜）が同じなら名前の修正とみなし、
+    #    古い会計IDをそのまま使う＝入金のひも付けが切れない。要確認にもLINEにもしない
+    def sig(rows):
+        return tuple(sorted((str(r[4]), str(r[5]), str(r[8])) for r in rows))
+    old_by_id = collections.defaultdict(list)
+    for r in old_det:
+        old_by_id[r[1]].append(r)
+    new_ids = {r[0] for r in sales if r[9] == now}        # 今回はじめて作った会計
+    renamed = []
+    for key in list(prev.keys()):
+        o = prev[key]
+        if o[0] not in paid_ids:
+            continue
+        cands = [r for r in sales if r[0] in new_ids and r[1] == o[1]
+                 and sig([d for d in details if d[1] == r[0]]) == sig(old_by_id.get(o[0], []))]
+        if len(cands) != 1:
+            continue
+        n = cands[0]; new_id, old_id = n[0], o[0]
+        n[0] = old_id                                      # 会計IDを古い方に戻す
+        n[4], n[5], n[8], n[9] = o[4], o[5], o[8], o[9]    # アポインター・メモ・支払状態・作成日時を引き継ぐ
+        for d in details:
+            if d[1] == new_id:
+                d[1] = old_id; d[0] = old_id + d[0][len(new_id):]
+        renamed.append(f'{old_id}（名前の修正とみて引き継ぎ）')
+        del prev[key]; new_ids.discard(new_id); added -= 1
+
     # うらかたさんから消えた会計は、支払方法が入っていてもこちらでも消す（2026-09-19 彩さん）
     gone = [o[0] for o in prev.values()]
 
@@ -194,9 +252,18 @@ def main():
     allsales.sort(key=lambda r: (r[1], r[0]))
     alldet.sort(key=lambda r: (r[2], r[0]))
 
+    # ② うらかたさんの画面が途中までしか読めなかったとき、読めなかった分を「消えた」とみなして
+    #    支払方法ごと消してしまうのを防ぐ。前回より明細が2割以上減っていたら止める（LINEが飛ぶ）
+    prev_cnt = len(old_det) - len(keep_d)
+    if prev_cnt >= 10 and len(details) < prev_cnt * 0.8:
+        print(f'🚨 取れた明細が前回より大きく減っています（前回 {prev_cnt}件 → 今回 {len(details)}件）。'
+              f'うらかたさんの画面が途中までしか読めなかった可能性があるので、書き込まずに止めます')
+        sys.exit(2)
+
     print(f'今回の月: 会計 {len(sales)}件（新規 {added}件）/ 明細 {len(details)}件 '
           f'/ 税抜合計 {total:,}円')
     print(f'他の月をそのまま残す: 会計 {len(keep_s)}件 / 明細 {len(keep_d)}件')
+    for r in renamed: print('  名前の修正:', r)
     print('種別:', dict(collections.Counter(d[3] for d in details)))
     for c in changed: print('  ⚠️ 要確認:', c)
     if dry:
@@ -208,14 +275,22 @@ def main():
     allpay = [r for r in old_pay if r[1] in live]
     dropped = len(old_pay) - len(allpay)
 
-    for name in ['会計', '明細', '入金']:
-        api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values/' +
-            urllib.parse.quote(f"'{name}'!A2:Z") + ':clear', at, 'POST', {})
+    # ① 書き込む前に控えを取る（失敗しても支払方法が戻せるように）
+    backup_sheet(ssid, at)
+
+    # ①' 「消してから書く」ではなく「上書きしてから余りを空にする」。
+    #    古い行数ぶん空行を足して一度に書くので、途中で切れても全消しにはならない
+    def padded(new, old_n, width):
+        rows = [list(r) for r in new]
+        blank = [''] * width
+        while len(rows) < old_n:
+            rows.append(list(blank))
+        return rows or [list(blank)]
     api(f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}/values:batchUpdate', at, 'POST',
         {'valueInputOption': 'RAW',
-         'data': [{'range': "'会計'!A2", 'values': allsales},
-                  {'range': "'明細'!A2", 'values': alldet}] +
-                 ([{'range': "'入金'!A2", 'values': allpay}] if allpay else [])})
+         'data': [{'range': "'会計'!A2", 'values': padded(allsales, len(old_sales), 11)},
+                  {'range': "'明細'!A2", 'values': padded(alldet,   len(old_det),   13)},
+                  {'range': "'入金'!A2", 'values': padded(allpay,   len(old_pay),   8)}]})
     if gone:
         print(f'うらかたさんから消えた会計 {len(gone)}件を、こちらからも消しました'
               + (f'（入金 {dropped}件も一緒に）' if dropped else ''))
