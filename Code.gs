@@ -324,7 +324,8 @@ function changePin(d) {
 
 // ─── 会計（売上）────────────────────────────────────
 function grossOf_(net, taxRate) {
-  return Math.round(Number(net || 0) * (1 + (Number(taxRate) || 0) / 100));
+  // 消費税の端数は切り捨て（2026-09-21 彩さん「消費税は切り捨てです」。Squareの請求と同じ）
+  return Math.floor(Number(net || 0) * (1 + (Number(taxRate) || 0) / 100));
 }
 function deleteRowsByKey_(sheetName, keyColIdx, keyValue) {
   const s = sh(sheetName);

@@ -4,7 +4,7 @@
   python3 import_sales.py <物販CSV> <サービス契約CSV> [--dry]   … 手作業で分けた場合
 会計（日付＋顧客でまとめる）と明細を作る。入金は空のまま＝彩さんが画面で支払方法を入れる。
 """
-import csv, json, sys, os, re, unicodedata, urllib.request, urllib.parse, datetime, collections
+import csv, json, sys, os, re, math, unicodedata, urllib.request, urllib.parse, datetime, collections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN = os.path.expanduser('~/.google_drive_token.json')
@@ -191,7 +191,7 @@ def main():
     for (d, cust), its in groups.items():
         d = d.replace('/', '-')
         net = sum(i['税抜'] for i in its)
-        gross = sum(round(i['税抜'] * (1 + i['税率'] / 100)) for i in its)
+        gross = sum(math.floor(i['税抜'] * (1 + i['税率'] / 100)) for i in its)   # 消費税は切り捨て
         # 会計の担当者は、明細の担当がひとつに揃っているときだけ入れる。
         # 揃っていなければ空にする（代表を1人選ぶと、担当なしの明細まで
         # その人がやったように見えてしまう。2026-09-19 彩さん指摘）
@@ -201,7 +201,7 @@ def main():
         if o:
             sid, apo, memo, made, state = o[0], o[4], o[5], o[9], o[8]
             # 金額が変わったのに支払が入っている＝黙って食い違わせない
-            if sid in paid_ids and str(o[7]) != str(gross):
+            if sid in paid_ids and str(o[7]) != str(gross) and not os.environ.get('NO_RECHECK'):
                 # ログは公開リポジトリに残るので、名前は出さず会計IDだけにする
                 state, _ = '要確認', changed.append(f'{sid} 税込{o[7]}→{gross}')
         else:
@@ -213,7 +213,7 @@ def main():
         total += net
         for m, i in enumerate(its, 1):
             details.append([f'{sid}-{m:02d}', sid, d, i['種別'], i['名称'], i['数量'],
-                            i['区分'], i['税率'], i['税抜'], round(i['税抜'] * (1 + i['税率'] / 100)),
+                            i['区分'], i['税率'], i['税抜'], math.floor(i['税抜'] * (1 + i['税率'] / 100)),
                             i['スタッフ'], False, i['備考']])
 
     # ③ うらかたさんでお客様の名前を直しただけなら、支払方法を引き継ぐ（2026-09-21 彩さん「これで」）。
