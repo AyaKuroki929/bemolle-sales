@@ -766,6 +766,8 @@ function getIncentive(month) {
     return result[name];
   };
   targets.forEach(ensure);
+  // 明細の1行ごとに、誰の分かを添える（給料明細で使う）
+  const cust_ = function (r) { return (saleById[String(r['会計ID'])] || {})['顧客名'] || ''; };
 
   // ①-0 プリペイドの消化には施術名が入らない。同じお客様・同じ日・同じ担当で
   //      半身の消化があれば、2行あわせて全身1回として数える（2026-09-18 彩さん決定）
@@ -789,7 +791,7 @@ function getIncentive(month) {
     } else if (targets.indexOf(p['担当者'] || '') !== -1) {
       // 相手が見つからない＝施術の種類が分からない。黙って0にせず画面に出す
       ensure(p['担当者']).detail.push({
-        date: ymd_(p['日付']),
+        date: ymd_(p['日付']), customer: cust_(p), name: p['名称'],
         label: p['名称'] + '（半身の消化が見つからないため要確認・0円）',
         amount: 0
       });
@@ -813,7 +815,7 @@ function getIncentive(month) {
       const overCap = (kind !== '部位') && (idx >= rule.dailyMax);
       if (overCap) {
         if (targets.indexOf(closer) !== -1) {
-          ensure(closer).detail.push({ date: date, label: kind + '（1日上限超）', amount: 0 });
+          ensure(closer).detail.push({ date: date, customer: cust_(r), name: r['名称'], label: kind + '（1日上限超）', amount: 0 });
         }
         return;
       }
@@ -824,15 +826,15 @@ function getIncentive(month) {
         const half = Math.round(base / 2);
         if (targets.indexOf(closer) !== -1) {
           ensure(closer).treat += half;
-          ensure(closer).detail.push({ date: date, label: kind + '（折半）', amount: half });
+          ensure(closer).detail.push({ date: date, customer: cust_(r), name: r['名称'], label: kind + '（折半）', amount: half });
         }
         if (targets.indexOf(appointer) !== -1) {
           ensure(appointer).treat += base - half;
-          ensure(appointer).detail.push({ date: date, label: kind + '（アポ折半）', amount: base - half });
+          ensure(appointer).detail.push({ date: date, customer: cust_(r), name: r['名称'], label: kind + '（アポ折半）', amount: base - half });
         }
       } else if (targets.indexOf(closer) !== -1) {
         ensure(closer).treat += base;
-        ensure(closer).detail.push({ date: date, label: kind, amount: base });
+        ensure(closer).detail.push({ date: date, customer: cust_(r), name: r['名称'], label: kind, amount: base });
       }
     });
   });
@@ -856,7 +858,7 @@ function getIncentive(month) {
       }
       const amt = Math.floor(netAmt * rate);
       ensure(staff).contract += amt;
-      ensure(staff).detail.push({ date: ymd_(r['日付']), label: label, amount: amt });
+      ensure(staff).detail.push({ date: ymd_(r['日付']), customer: cust_(r), name: r['名称'], label: label, amount: amt });
     });
 
   // ③ 物販10% ④ 定期便5%（初回は対象外）⑤ 調整
@@ -869,26 +871,26 @@ function getIncentive(month) {
     if (r['種別'] === '物販') {
       const amt = Math.floor(netAmt * RATE_PRODUCT);
       ensure(staff).product += amt;
-      ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（物販10%）', amount: amt });
+      ensure(staff).detail.push({ date: ymd_(r['日付']), customer: cust_(r), name: r['名称'], label: r['名称'] + '（物販10%）', amount: amt });
     } else if (r['種別'] === '定期便') {
       if (first) {
-        ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（定期便・初回は対象外）', amount: 0 });
+        ensure(staff).detail.push({ date: ymd_(r['日付']), customer: cust_(r), name: r['名称'], label: r['名称'] + '（定期便・初回は対象外）', amount: 0 });
       } else if (month >= SUB_PER_ITEM_FROM) {
         // 2026年9月から：商品1つずつに5%（分かりやすさを優先・2026-09-18 彩さん決定）
         const amt = Math.floor(netAmt * RATE_SUBSCRIBE);
         ensure(staff).subscribe += amt;
-        ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（定期便5%）', amount: amt });
+        ensure(staff).detail.push({ date: ymd_(r['日付']), customer: cust_(r), name: r['名称'], label: r['名称'] + '（定期便5%）', amount: amt });
       } else {
         // 2026年8月まで：お客様ごとの合計に5%（サブスク個数把握のQ列と同じ出し方）
         const head = saleById[String(r['会計ID'])] || {};
         const k = staff + '|' + ymd_(r['日付']) + '|' + (head['顧客名'] || '');
-        if (!subGroups[k]) { subGroups[k] = { staff: staff, date: ymd_(r['日付']), net: 0, names: [] }; subOrder.push(k); }
+        if (!subGroups[k]) { subGroups[k] = { staff: staff, date: ymd_(r['日付']), customer: cust_(r), net: 0, names: [] }; subOrder.push(k); }
         subGroups[k].net += netAmt;
         subGroups[k].names.push(r['名称']);
       }
     } else if (r['種別'] === '調整') {
       ensure(staff).adjust += netAmt;
-      ensure(staff).detail.push({ date: ymd_(r['日付']), label: r['名称'] + '（調整）', amount: netAmt });
+      ensure(staff).detail.push({ date: ymd_(r['日付']), customer: cust_(r), name: r['名称'], label: r['名称'] + '（調整）', amount: netAmt });
     }
   });
 
@@ -898,7 +900,7 @@ function getIncentive(month) {
     const amt = Math.floor(g.net * RATE_SUBSCRIBE);
     ensure(g.staff).subscribe += amt;
     ensure(g.staff).detail.push({
-      date: g.date,
+      date: g.date, customer: g.customer, name: g.names.join('・'),
       label: g.names.join('・') + '（定期便5%・' + g.net.toLocaleString() + '円分）',
       amount: amt
     });
