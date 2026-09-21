@@ -25,7 +25,8 @@ def app(action, **params):
 
 
 def gtoken():
-    t = json.load(open(os.path.expanduser('~/.google_drive_token.json')))
+    raw = os.environ.get('GOOGLE_TOKEN')
+    t = json.loads(raw) if raw else json.load(open(os.path.expanduser('~/.google_drive_token.json')))
     d = urllib.parse.urlencode({'client_id': t['client_id'], 'client_secret': t['client_secret'],
                                 'refresh_token': t['refresh_token'], 'grant_type': 'refresh_token'}).encode()
     return json.load(urllib.request.urlopen('https://oauth2.googleapis.com/token', d))['access_token']
@@ -43,6 +44,35 @@ def timecard(staff, month):
         if r[0] and amt:
             out.append({'date': str(r[0])[:10], 'in': r[1], 'out': r[2], 'amount': amt})
     return out
+
+
+def upload_to_drive(path, folder_name='報酬明細'):
+    """Google ドライブの「報酬明細」フォルダへ置く。同じ名前があれば差し替える"""
+    at = gtoken()
+    H = {'Authorization': 'Bearer ' + at}
+    def j(url, method='GET', body=None, headers=None):
+        data = json.dumps(body).encode() if isinstance(body, dict) else body
+        h = dict(H); h.update(headers or {})
+        if isinstance(body, dict): h['Content-Type'] = 'application/json'
+        return json.load(urllib.request.urlopen(urllib.request.Request(url, data=data, method=method, headers=h)))
+    q = urllib.parse.urlencode({'q': f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false", 'fields': 'files(id)'})
+    f = j('https://www.googleapis.com/drive/v3/files?' + q).get('files', [])
+    fid = f[0]['id'] if f else j('https://www.googleapis.com/drive/v3/files?fields=id', 'POST',
+                                  {'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder'})['id']
+    q2 = urllib.parse.urlencode({'q': f"name='{path.name}' and '{fid}' in parents and trashed=false", 'fields': 'files(id)'})
+    old = j('https://www.googleapis.com/drive/v3/files?' + q2).get('files', [])
+    boundary = 'xxBOUNDARYxx'
+    meta = json.dumps({'name': path.name, **({} if old else {'parents': [fid]})}).encode()
+    body = (b'--' + boundary.encode() + b'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta +
+            b'\r\n--' + boundary.encode() + b'\r\nContent-Type: application/pdf\r\n\r\n' + path.read_bytes() +
+            b'\r\n--' + boundary.encode() + b'--')
+    hdr = {'Content-Type': f'multipart/related; boundary={boundary}'}
+    if old:
+        r = j(f'https://www.googleapis.com/upload/drive/v3/files/{old[0]["id"]}?uploadType=multipart&fields=id,webViewLink', 'PATCH', body, hdr)
+    else:
+        r = j('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', 'POST', body, hdr)
+    print(f'Googleドライブ「{folder_name}」に置きました: {r.get("webViewLink", "")}')
+    return r
 
 
 def yen(n):
@@ -92,7 +122,8 @@ def build_html(staff, month, sal, inc, tc, extras):
             elif '（' in note:
                 head, tail = note.split('（', 1)
                 note = f'{head}<span class="mini">（{tail}</span>'
-            rows.append(f'<tr><td></td><td class="k {k}">{k}</td><td>{d.get("customer","")}</td>'
+            cust = d.get('customer', '')
+            rows.append(f'<tr><td></td><td class="k {k}">{k}</td><td>{cust + " 様" if cust else ""}</td>'
                         f'<td>{note}</td>'
                         f'<td class="n">{yen(d["amount"]) if d["amount"] else "—"}</td></tr>')
     tc_rows = ''.join(f'<tr><td>{md(t["date"])}</td><td>{t["in"]}〜{t["out"]}</td><td class="n">{yen(t["amount"])}</td></tr>' for t in tc)
@@ -175,9 +206,11 @@ def main():
     tc = timecard(staff, month)
 
     html = build_html(staff, month, sal, inc, tc, extras)
-    # 出力先は iCloud の「業務委託／報酬明細」（有加報酬.numbers と同じ場所・iPadからも見える）。
-    # 毎月ここに溜めていく（2026-09-21 彩さん「どこかのフォルダに入れていってほしい」）
-    out_dir = (Path.home() / 'Library/Mobile Documents/com~apple~CloudDocs/紫妃彩/Bemolle/スタッフ/業務委託/報酬明細')
+    # 置き場所は Google ドライブの「報酬明細」フォルダ（PCを閉じていても毎月1日に自動で作るため。
+    # 2026-09-21 彩さん「10月1日に作ってOK　PC閉じてても作る？」）。
+    # Macで動かしたときは iCloud の業務委託／報酬明細 にも同じものを置く
+    icloud = Path.home() / 'Library/Mobile Documents/com~apple~CloudDocs/紫妃彩/Bemolle/スタッフ/業務委託/報酬明細'
+    out_dir = icloud if icloud.parent.exists() else Path('out')
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f'{staff}_{month[:4]}年{int(month[5:])}月_報酬明細.pdf'
     from playwright.sync_api import sync_playwright
@@ -189,6 +222,7 @@ def main():
         b.close()
     total = sum(t['amount'] for t in tc) + sum(e['amount'] for e in extras) + inc['total']
     print(f'作成: {out}')
+    upload_to_drive(out)
     print(f'  日当 {sum(t["amount"] for t in tc):,} + 特別日当 {sum(e["amount"] for e in extras):,} '
           f'+ インセンティブ {inc["total"]:,} = {total:,}円（明細 {len(inc["detail"])}行）')
 

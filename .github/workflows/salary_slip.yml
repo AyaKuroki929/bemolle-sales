@@ -1,0 +1,52 @@
+name: 報酬明細を作る
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'       # 毎月1日 9:00 JST（0時の取り込みが終わったあと）
+  workflow_dispatch:
+    inputs:
+      month:
+        description: '作る月（例 2026-08）。空なら先月'
+        required: false
+
+jobs:
+  slip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: PDFの道具と日本語フォントを入れる
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk >/dev/null
+          pip install -q playwright
+          playwright install --with-deps chromium >/dev/null
+
+      - name: 作る月を決める（先月）
+        id: m
+        run: |
+          M="${{ github.event.inputs.month }}"
+          if [ -z "$M" ]; then
+            M=$(TZ=Asia/Tokyo date -d "$(TZ=Asia/Tokyo date +%Y-%m-01) -1 day" +%Y-%m)
+          fi
+          echo "month=$M" >> $GITHUB_OUTPUT
+          echo "作る月: $M"
+
+      - name: 報酬明細を作ってGoogleドライブに置く
+        env:
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+          BEMOLLE_PIN: ${{ secrets.BEMOLLE_PIN }}
+        run: |
+          set -o pipefail
+          python3 salary_slip.py "${{ steps.m.outputs.month }}" 中田有加 2>&1 | tee out.txt
+
+      - name: 失敗したらLINEで知らせる
+        if: failure()
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 notify_line.py "🚨 報酬明細が作れませんでした"
