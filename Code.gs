@@ -982,7 +982,8 @@ function exportCsv(month) {
     payBySale[k].push((p['支払方法'] || '') + ' ' + yen_(p['金額']) + when);
   });
 
-  const rows = [['日付', '顧客名', '担当者', '種別', '名称', '数量', '税率', '税抜金額', '税込金額', '支払方法', '備考']];
+  // 備考はCSVに出さない（2026-09-21 彩さん「備考欄（K列）は不要」）
+  const rows = [['日付', '顧客名', '担当者', '種別', '名称', '数量', '税率', '税抜金額', '税込金額', '支払方法']];
   all.items.filter(function (r) { return ymd_(r['日付']).slice(0, 7) === month; })
     .sort(function (a, b) { return ymd_(a['日付']) < ymd_(b['日付']) ? -1 : 1; })
     .forEach(function (r) {
@@ -990,7 +991,7 @@ function exportCsv(month) {
       rows.push([ymd_(r['日付']), h['顧客名'] || '', r['担当者'] || '', r['種別'], r['名称'],
                  Number(r['数量']) || 1, Number(r['税率']) || 0,
                  yen_(r['税抜金額']), yen_(r['税込金額']),
-                 (payBySale[String(r['会計ID'])] || []).join(' / '), r['備考'] || '']);
+                 (payBySale[String(r['会計ID'])] || []).join(' / ')]);
     });
 
   // 在庫払出は売上ではないのでCSVには出さない（2026-09-19 彩さん）。画面の在庫払出タブで見る
