@@ -984,7 +984,8 @@ function exportCsv(month) {
 
   // 備考はCSVに出さない（2026-09-21 彩さん「備考欄（K列）は不要」）
   const rows = [['日付', '顧客名', '担当者', '種別', '名称', '数量', '税率', '税抜金額', '税込金額', '支払方法']];
-  all.items.filter(function (r) { return ymd_(r['日付']).slice(0, 7) === month; })
+  // 0円の行（コースの消化など）は税理士さんに渡す売上ではないので出さない（2026-09-21 彩さん）
+  all.items.filter(function (r) { return ymd_(r['日付']).slice(0, 7) === month && (Number(r['税抜金額']) || 0) !== 0; })
     .sort(function (a, b) { return ymd_(a['日付']) < ymd_(b['日付']) ? -1 : 1; })
     .forEach(function (r) {
       const h = saleById[String(r['会計ID'])] || {};
