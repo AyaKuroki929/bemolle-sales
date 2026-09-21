@@ -269,14 +269,31 @@ def main():
     if dry:
         for s in sales[:5]: print('  ', s[0], s[1], s[6:9])   # 名前は出さない（公開ログ対策）
         return
-    # 会計が消えたら、その入金も残さない（集計に幽霊が残らないように）
+    # ① 書き込む前に控えを取る（失敗しても支払方法が戻せるように）
+    backup_sheet(ssid, at)
+
+    # 入金は「書く直前」に読み直す。取り込みが走っている数十秒の間に彩さんが押した分を
+    # 古い読み取りで上書きして消さないため（2026-09-21 に隙間として見つけた）
     live = {r[0] for r in allsales}
     old_pay = [pad(r, 8) for r in read(ssid, at, '入金') if r and r[0]]
     allpay = [r for r in old_pay if r[1] in live]
     dropped = len(old_pay) - len(allpay)
 
-    # ① 書き込む前に控えを取る（失敗しても支払方法が戻せるように）
-    backup_sheet(ssid, at)
+    # 定期便だけの会計は、支払方法を自動で Square にする（2026-09-19 彩さん「定期便は自動でSquareにしてください、毎月」）。
+    # 物販などが混ざる会計は彩さんが画面で入れる。すでに入金がある会計には触らない
+    paid_now = {r[1] for r in allpay}
+    auto = []
+    for srow in allsales:
+        sid, gross = srow[0], int(srow[7] or 0)
+        if sid in paid_now or gross <= 0 or srow[8] == '入力済':
+            continue
+        kinds = {d[3] for d in alldet if d[1] == sid}
+        if kinds == {'定期便'}:
+            allpay.append([f'P{sid[1:]}A', sid, srow[1], 'Square', gross, '入金済', srow[1], '定期便（自動）'])
+            srow[8] = '入力済'
+            auto.append(sid)
+    if auto:
+        print(f'定期便だけの会計 {len(auto)}件に Square を自動で入れました')
 
     # ①' 「消してから書く」ではなく「上書きしてから余りを空にする」。
     #    古い行数ぶん空行を足して一度に書くので、途中で切れても全消しにはならない
