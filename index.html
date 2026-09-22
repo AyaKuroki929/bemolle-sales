@@ -391,11 +391,35 @@ async function loadStocks(){
   try{
     const rows = await api('getStocks', {}, { month });
     if(!rows.length){ $('#stockList').innerHTML = '<div class="mini">まだありません</div>'; return; }
+    STOCKS = rows;
     $('#stockList').innerHTML = `<table><tr><th>日付</th><th>商品</th><th class="n">数</th><th>用途</th><th>メモ</th><th></th></tr>`
-      + rows.map(r => `<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.name)}</td><td class="n">${r.qty}</td>
+      + rows.map((r,i) => `<tr id="stk_${i}"><td>${esc(r.date.slice(5))}</td><td>${esc(r.name)}</td><td class="n">${r.qty}</td>
         <td>${esc(r.use)}</td><td class="mini">${esc(r.memo||'')}</td>
-        <td><button class="del" onclick="removeStock('${r.id}')">削除</button></td></tr>`).join('') + '</table>';
+        <td style="white-space:nowrap"><button class="del" style="color:var(--rose-d)" onclick="editStock(${i})">編集</button>
+        <button class="del" onclick="removeStock('${r.id}')">削除</button></td></tr>`).join('') + '</table>';
   }catch(e){ $('#stockList').innerHTML = `<div class="ng">${esc(e.message)}</div>`; }
+}
+let STOCKS = [];
+// 一覧の1行をその場で入力欄に変えて直す（日付・数・用途・メモ。商品名は変えない＝別の商品なら削除して入れ直す）
+function editStock(i){
+  const r = STOCKS[i]; const tr = $('#stk_'+i); if(!r || !tr) return;
+  const uses = [...$('#k_use').options].map(o=>`<option ${o.value===r.use?'selected':''}>${esc(o.value)}</option>`).join('');
+  tr.innerHTML = `<td><input type="date" id="e_date" value="${r.date}" style="width:150px"></td>
+    <td>${esc(r.name)}</td>
+    <td class="n"><input type="number" id="e_qty" value="${r.qty}" min="1" style="width:60px"></td>
+    <td><select id="e_use">${uses}</select></td>
+    <td><input id="e_memo" value="${esc(r.memo||'')}" style="width:120px"></td>
+    <td style="white-space:nowrap"><button class="btn sm" id="e_save">保存</button>
+    <button class="del" onclick="loadStocks()">やめる</button></td>`;
+  $('#e_save').onclick = () => busy($('#e_save'), '…', async () => {
+    const date=$('#e_date').value, qty=Number($('#e_qty').value)||0, use=$('#e_use').value, memo=$('#e_memo').value.trim();
+    try{
+      await api('updateStock', { id:r.id, date, qty, use, memo });
+      toast('直しました');
+      if(date.slice(0,7) !== ($('#k_date').value||'').slice(0,7)) $('#k_date').value = date;   // 月をまたいだら移った先の月を表示
+      loadStocks();
+    }catch(e){ toast(e.message); }
+  });
 }
 async function removeStock(id){
   if(!confirm('この払出の記録を削除しますか？')) return;

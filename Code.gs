@@ -127,6 +127,7 @@ function handle(params, body) {
       case 'saveStocks':      result = saveStocks(d);              break;
       case 'getStocks':       result = getStocks(params);          break;
       case 'deleteStock':     result = deleteStock(d);             break;
+      case 'updateStock':     result = updateStock(d);             break;
       case 'getMasters':      result = getMasters();               break;
       case 'saveMaster':      result = saveMaster(d);              break;
       case 'deleteMaster':    result = deleteMaster(d);            break;
@@ -669,6 +670,28 @@ function saveStocks(d) {
     });
     s.getRange(s.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
     return { saved: rows.length };
+  });
+}
+
+/** 記録済みの払出の日付・数量・用途・メモを直す（商品名は変えない。2026-09-22 彩さん「日付を変えたい」） */
+function updateStock(d) {
+  return withLock_(function () {
+    const date = ymd_(d.date);
+    if (!date) throw new Error('日付を入れてください');
+    if (STOCK_USES.indexOf(d.use) === -1) throw new Error('用途は サロン使用 か 黒木購入');
+    const qty = Number(d.qty || 0);
+    if (!(qty >= 1)) throw new Error('数量は1以上');
+    const s = sh(SH_STOCK);
+    const vals = s.getLastRow() > 1 ? s.getRange(2, 1, s.getLastRow() - 1, s.getLastColumn()).getValues() : [];
+    for (let i = 0; i < vals.length; i++) {
+      if (String(vals[i][0]) === String(d.id)) {
+        const row = vals[i].slice();
+        row[1] = date; row[3] = qty; row[4] = d.use; row[6] = d.memo || '';
+        s.getRange(i + 2, 1, 1, row.length).setValues([row]);
+        return { updated: true, id: d.id, date: date };
+      }
+    }
+    throw new Error('払出が見つかりません');
   });
 }
 
