@@ -348,7 +348,9 @@ $('#btnAddLine').onclick = () => {
   const name = $('#k_name').value.trim();
   if(!name) return toast('商品を入れてください');
   KLINES.push({ name, qty: Number($('#k_qty').value)||1 });
-  $('#k_name').value=''; $('#k_qty').value=1; $('#k_name').focus();
+  // 足したら商品の選択を空に戻し、選んでいるブランドの一覧に戻す（2026-09-22 彩さん）。
+  // 入力欄にフォーカスを戻すとiPadでキーボードが一覧を隠すので戻さない
+  $('#k_name').value=''; $('#k_qty').value=1; fillProdList();
   renderKLines();
 };
 $('#btnSaveStock').onclick = async () => {
