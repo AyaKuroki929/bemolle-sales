@@ -120,10 +120,20 @@ def main():
                 sys.exit('ログインできませんでした（login_error.png を確認）')
 
             # ── 売上管理へ
-            page.goto(BASE + '/reports_income', wait_until='networkidle', timeout=60000)
-            page.wait_for_timeout(5000)
-
-            sels = page.query_selector_all('select')
+            # 年月の選択欄が描画されるまで待つ（固定5秒では間に合わない夜があった 2026-09-26）。
+            # 出なければ1回だけ読み直す
+            sels = []
+            for attempt in range(2):
+                page.goto(BASE + '/reports_income', wait_until='networkidle', timeout=60000)
+                try:
+                    page.wait_for_selector('select', timeout=40000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(3000)
+                sels = page.query_selector_all('select')
+                if len(sels) >= 2:
+                    break
+                print(f'年月の選択欄がまだ出ていません（{attempt + 1}回目）。読み直します')
             if len(sels) < 2:
                 sys.exit('年月の選択欄が見つかりませんでした')
             sels[0].select_option(label=YEAR)
