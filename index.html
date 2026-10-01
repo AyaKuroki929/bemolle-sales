@@ -222,7 +222,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const BUILD = '20261002022108';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
+const BUILD = '20261002023013';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
 // GitHub Pages は10分間ブラウザに古い版を使わせるので、新しい版が出ていたら自分で読み直す（2026-10-02 彩さん「なってない」）
 async function checkBuild(){
   try{
@@ -231,7 +231,8 @@ async function checkBuild(){
     if(!/^\d{14}$/.test(latest) || latest === BUILD) return;
     if(sessionStorage.getItem('reloaded_for') === latest) return;   // 読み直しても古いままなら繰り返さない
     sessionStorage.setItem('reloaded_for', latest);
-    location.reload();
+    const u = new URL(location.href); u.searchParams.set('v', latest);   // 版の番号を付けたURLで開き直す＝古い保存版を確実に避ける
+    location.replace(u.toString());
   }catch(e){}
 }
 checkBuild();
