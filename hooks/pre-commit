@@ -1,0 +1,10 @@
+#!/bin/bash
+# index.html をコミットするとき、版の印（BUILD）を日時に書き換えて build.txt にも同じ値を書く。
+# 公開ページはこの印を見て、新しい版が出ていたら自分で読み直す（2026-10-02）
+cd "$(git rev-parse --show-toplevel)"
+if git diff --cached --name-only | grep -qx 'index.html'; then
+  STAMP=$(date "+%Y%m%d%H%M%S")
+  sed -i '' "s/^const BUILD = '[0-9]*';/const BUILD = '$STAMP';/" index.html
+  echo "$STAMP" > build.txt
+  git add index.html build.txt
+fi
