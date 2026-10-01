@@ -133,7 +133,7 @@ def build_html(staff, month, sal, inc, tc, extras):
     return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <style>
 @page{{size:A4;margin:16mm 14mm}}
-body{{font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;color:#2b2b2b;font-size:11.5px;line-height:1.5}}
+body{{font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans CJK JP","Noto Sans JP",sans-serif;color:#2b2b2b;font-size:11.5px;line-height:1.5}}
 h1{{font-size:18px;margin:0 0 2px}} .sub{{color:#777;font-size:11px;margin-bottom:14px}}
 h2{{font-size:13px;margin:16px 0 6px;padding-left:8px;border-left:4px solid #b07a80}}
 table{{width:100%;border-collapse:collapse}} th,td{{padding:4px 6px;border-bottom:1px solid #e4dcd6;vertical-align:top}}
