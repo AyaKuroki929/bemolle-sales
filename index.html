@@ -154,12 +154,14 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <div class="card">
     <h2>日当5,000円がつかない日を入れる</h2>
     <div class="mini" style="margin-bottom:8px">研修や短時間勤務など、タイムカードにメモが入っていて日当が出ない日の金額をここに入れます</div>
+    <div id="memoDays" style="margin-bottom:10px"></div>
     <div class="row">
       <div><label>日付</label><input type="date" id="a_date"></div>
       <div><label>スタッフ</label><select id="a_staff"></select></div>
     </div>
     <div style="margin-top:8px"><label>金額</label>
-      <input type="text" inputmode="numeric" id="a_amount" placeholder="例：1200"></div>
+      <div style="position:relative"><span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--sub);font-weight:600">¥</span>
+      <input type="text" inputmode="numeric" id="a_amount" placeholder="例：1,200" style="padding-left:26px"></div></div>
     <div style="margin-top:8px"><label>メモ（理由をここに書く）</label><input id="a_memo" placeholder="例：プラペン研修2時間（600円×2）"></div>
     <button class="btn wide" id="btnSaveAllow" style="margin-top:10px">登録する</button>
   </div>
@@ -794,13 +796,36 @@ $('#btnSaveAllow').onclick = () => busy($('#btnSaveAllow'), '登録していま�
     $('#a_amount').value=''; $('#a_memo').value=''; loadAllowances();
   }catch(e){ toast(e.message); }
 });
+$('#a_amount').onblur = () => { const n = Number(String($('#a_amount').value).replace(/[^0-9]/g,'')); $('#a_amount').value = n ? n.toLocaleString('ja-JP') : ''; };
 $('#btnReloadAllow').onclick = () => busy($('#btnReloadAllow'), '…', loadAllowances);
 $('#a_month').onchange = loadAllowances;
 $('#p_month').onchange = loadPayQueue;
+// タイムカードにメモが入っている日（日当が自動で付かない日）を、登録済みかどうか付きで出す
+let MEMODAYS = [];
+async function loadMemoDays(month, rows){
+  try{
+    MEMODAYS = await api('getMemoDays', {}, month?{month}:{});
+    if(!MEMODAYS.length){ $('#memoDays').innerHTML = `<div class="mini">${esc(month||'')} タイムカードにメモが入っている日はありません</div>`; return; }
+    const done = {}; (rows||[]).forEach(r => { done[r.date+'|'+r.staff] = (done[r.date+'|'+r.staff]||0) + r.amount; });
+    $('#memoDays').innerHTML = `<div class="mini" style="margin-bottom:4px">タイムカードにメモが入っている日（タップすると下の欄に入ります）</div>
+      <table><tr><th>日付</th><th>スタッフ</th><th>メモ</th><th class="n">登録</th></tr>`
+      + MEMODAYS.map((m,i) => { const a = done[m.date+'|'+m.staff];
+        return `<tr style="cursor:pointer" onclick="pickMemoDay(${i})"><td>${esc(m.date.slice(5))}</td><td>${esc(m.staff)}</td>
+          <td class="mini">${esc(m.memo)}</td><td class="n">${a ? yen(a) : '<span class="ng">未登録</span>'}</td></tr>`; }).join('') + '</table>';
+  }catch(e){ $('#memoDays').innerHTML = ''; }
+}
+function pickMemoDay(i){
+  const m = MEMODAYS[i]; if(!m) return;
+  $('#a_date').value = m.date;
+  if([...$('#a_staff').options].some(o=>o.value===m.staff)) $('#a_staff').value = m.staff;
+  if(!$('#a_memo').value.trim()) $('#a_memo').value = m.memo;
+  $('#a_amount').focus();
+}
 async function loadAllowances(){
   const month = $('#a_month').value;
   try{
     const rows = await api('getAllowances', {}, month?{month}:{});
+    loadMemoDays(month, rows);
     if(!rows.length){ $('#allowList').innerHTML='<div class="mini">まだありません</div>'; return; }
     const sum = rows.reduce((a,r)=>a+r.amount,0);
     $('#allowList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th class="n">金額</th><th>メモ</th><th></th></tr>`

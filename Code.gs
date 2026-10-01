@@ -122,6 +122,7 @@ function handle(params, body) {
       case 'getUnpaid':       result = getUnpaid();                break;
       case 'saveAllowance':   result = saveAllowance(d);           break;
       case 'getAllowances':   result = getAllowances(params);      break;
+      case 'getMemoDays':     result = getMemoDays(params);        break;
       case 'deleteAllowance': result = deleteAllowance(d);         break;
       case 'saveStock':       result = saveStock(d);               break;
       case 'saveStocks':      result = saveStocks(d);              break;
@@ -936,6 +937,23 @@ function getIncentive(month) {
     r.detail.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
   });
   return { month: month, staff: Object.keys(result).map(function (k) { return result[k]; }) };
+}
+
+/** タイムカードにメモが入っている日（＝日当¥5,000が自動で付かない日）を月ごとに返す。
+ *  日当タブで「この日の金額を入れる」目印にする（2026-10-02 彩さん）。読めない時は空で返す */
+function getMemoDays(params) {
+  const month = params.month || '';
+  try {
+    const sheet = SpreadsheetApp.openById(TIMECARD_ID).getSheetByName('日報メモ');
+    if (!sheet || sheet.getLastRow() <= 1) return [];
+    return sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues().map(function (r) {
+      return { date: ymd_(r[0]), staff: String(r[1] || ''), memo: String(r[2] || '') };
+    }).filter(function (m) {
+      return m.date && m.memo && (!month || m.date.slice(0, 7) === month);
+    }).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  } catch (e) {
+    return [];
+  }
 }
 
 // ─── タイムカードから日当を読む ────────────────────────
