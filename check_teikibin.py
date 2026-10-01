@@ -2,7 +2,7 @@
 """定期便の答え合わせ。
 
 うらかたさんから取り込んだ「定期便」（売上日報スプレッドシートの明細）と、
-「サブスク個数把握」スプレッドシートのその月のタブ（B列=お客様 / Q列=金額 / R列=担当）を
+「サブスク個数把握」スプレッドシートのその月のタブ（B列=お客様 / 金額列はヘッダー「金額」で動的検出）を
 お客様ごとに突き合わせる。
 
   python3 check_teikibin.py [2026-09] [--quiet]
@@ -65,21 +65,29 @@ def main():
         cust = sales.get(r['会計ID'], {}).get('顧客名', '')
         mine[person(cust)] += int(r['税抜金額'] or 0)
 
-    # ② サブスク個数把握のその月のタブ（B列=お客様 / Q列=金額）
+    # ② サブスク個数把握のその月のタブ（B列=お客様 / 金額列はヘッダーで動的に探す）
     y, m = month.split('-')
     tab = f'{int(y)}年{int(m)}月'
     try:
-        v = values(SUBSC_ID, f"'{tab}'!A1:R60", at)
+        v = values(SUBSC_ID, f"'{tab}'!A1:Z60", at)
     except Exception as e:
         print(f'🚨 サブスク個数把握に「{tab}」のタブがありません（{e}）')
         sys.exit(9)
+    # 金額列の位置は商品列が増減すると動く（2026-09にエキスパートローション列が増えて
+    # Q列→R列へずれ、固定の16番目を読んでいたため全員0円と誤検知した）。
+    # 2行目のヘッダーから「金額」の列を毎回探す。
+    header = (list(v[1]) + [''] * 30) if len(v) > 1 else [''] * 30
+    amt_idx = next((i for i, h in enumerate(header) if '金額' in str(h)), None)
+    if amt_idx is None:
+        print(f'🚨 サブスク個数把握「{tab}」の2行目に「金額」の見出しが見つかりません')
+        sys.exit(9)
     theirs = collections.defaultdict(int)
     for r in v[3:]:
-        r = (list(r) + [''] * 18)[:18]
+        r = (list(r) + [''] * (amt_idx + 1))[:amt_idx + 1]
         name = person(r[1])
         if not name or name in ('合計', '計'):
             continue
-        amt = int(re.sub(r'[^\d-]', '', str(r[16])) or 0)
+        amt = int(re.sub(r'[^\d-]', '', str(r[amt_idx])) or 0)
         theirs[name] += amt
 
     if not theirs:
