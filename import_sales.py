@@ -276,6 +276,10 @@ def main():
     # 古い読み取りで上書きして消さないため（2026-09-21 に隙間として見つけた）
     live = {r[0] for r in allsales}
     old_pay = [pad(r, 8) for r in read(ssid, at, '入金') if r and r[0]]
+    # 同じ入金IDが2行あったら1行に戻す（2026-10-09 未収に同じ行が2回出た。原因の特定は
+    # できなかったが、毎晩ここで自然に直るようにしておく）
+    seen_pid = set()
+    old_pay = [r for r in old_pay if not (r[0] in seen_pid or seen_pid.add(r[0]))]
     allpay = [r for r in old_pay if r[1] in live]
     dropped = len(old_pay) - len(allpay)
 
