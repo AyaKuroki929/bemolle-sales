@@ -37,13 +37,31 @@ def timecard(staff, month):
     u = (f'https://sheets.googleapis.com/v4/spreadsheets/{TIMECARD_ID}/values/'
          + urllib.parse.quote(f"'{staff}_{month}'!A1:D40"))
     v = json.load(urllib.request.urlopen(urllib.request.Request(u, headers={'Authorization': 'Bearer ' + at}))).get('values', [])
-    out = []
+    out, times = [], {}
     for r in v[1:]:
         r = (r + [''] * 4)[:4]
         amt = int(re.sub(r'[^\d]', '', str(r[3])) or 0)
-        if r[0] and amt:
+        if not r[0]:
+            continue
+        if amt:
             out.append({'date': str(r[0])[:10], 'in': r[1], 'out': r[2], 'amount': amt})
-    return out
+        elif r[1] or r[2]:
+            # 日当なしでも打刻がある日（時給の時短勤務など）。特別日当の行に時間を添えるのに使う
+            times[str(r[0])[:10]] = (r[1], r[2])
+    return out, times
+
+
+def round5(tin, tout):
+    """給料計算の5分単位（開始は切り上げ・終了は切り捨て。2026-10-12 彩さん）"""
+    def mins(t):
+        m = re.match(r'(\d{1,2}):(\d{2})', str(t))
+        return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+    a, b = mins(tin), mins(tout)
+    if a is None or b is None:
+        return ''
+    a = -(-a // 5) * 5          # 切り上げ
+    b = b // 5 * 5              # 切り捨て
+    return f'{a // 60}:{a % 60:02d}〜{b // 60}:{b % 60:02d}'
 
 
 def upload_to_drive(path, folder_name='報酬明細'):
@@ -203,7 +221,15 @@ def main():
     for a in sal.get('allowances', []):
         if a.get('staff') == staff:
             extras.append({'date': a['date'], 'amount': int(a['amount']), 'memo': a.get('memo') or a.get('reason', '')})
-    tc = timecard(staff, month)
+    tc, tc_times = timecard(staff, month)
+    # タイムカードに打刻がある特別日当の日は、5分単位に丸めた時間を内容へ添える
+    # （打刻が無い日＝研修などはそのまま。2026-10-12 彩さん）
+    for e in extras:
+        t = tc_times.get(e['date'])
+        if t:
+            span = round5(t[0], t[1])
+            if span and span not in e['memo']:
+                e['memo'] = (e['memo'] + ' ' if e['memo'] else '') + f'（{span}）'
 
     html = build_html(staff, month, sal, inc, tc, extras)
     # 置き場所は Google ドライブの「報酬明細」フォルダ（PCを閉じていても毎月1日に自動で作るため。
