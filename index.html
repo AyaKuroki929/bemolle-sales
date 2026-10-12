@@ -222,7 +222,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const BUILD = '20261002023013';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
+const BUILD = '20261012123919';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
 // GitHub Pages は10分間ブラウザに古い版を使わせるので、新しい版が出ていたら自分で読み直す（2026-10-02 彩さん「なってない」）
 async function checkBuild(){
   try{
@@ -823,10 +823,11 @@ async function loadMemoDays(month, rows){
     if(!MEMODAYS.length){ $('#memoDays').innerHTML = `<div class="mini">${esc(month||'')} タイムカードにメモが入っている日はありません</div>`; return; }
     const done = {}; (rows||[]).forEach(r => { done[r.date+'|'+r.staff] = (done[r.date+'|'+r.staff]||0) + r.amount; });
     $('#memoDays').innerHTML = `<div class="mini" style="margin-bottom:4px">タイムカードにメモが入っている日（タップすると下の欄に入ります）</div>
-      <table><tr><th>日付</th><th>スタッフ</th><th>メモ</th><th class="n">登録</th></tr>`
+      <table><tr><th>日付</th><th>スタッフ</th><th>時間</th><th>メモ</th><th class="n">登録</th></tr>`
       + MEMODAYS.map((m,i) => { const a = done[m.date+'|'+m.staff];
+        const tm = m.timeIn || m.timeOut ? `${esc(m.timeIn)}〜${esc(m.timeOut)}` : '－';
         return `<tr style="cursor:pointer" onclick="pickMemoDay(${i})"><td>${esc(m.date.slice(5))}</td><td>${esc(m.staff)}</td>
-          <td class="mini">${esc(m.memo)}</td><td class="n">${a ? yen(a) : '<span class="ng">未登録</span>'}</td></tr>`; }).join('') + '</table>';
+          <td style="white-space:nowrap">${tm}</td><td class="mini">${esc(m.memo)}</td><td class="n">${a ? yen(a) : '<span class="ng">未登録</span>'}</td></tr>`; }).join('') + '</table>';
   }catch(e){ $('#memoDays').innerHTML = ''; }
 }
 function pickMemoDay(i){

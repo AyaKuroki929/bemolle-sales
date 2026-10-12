@@ -946,11 +946,33 @@ function getMemoDays(params) {
   try {
     const sheet = SpreadsheetApp.openById(TIMECARD_ID).getSheetByName('日報メモ');
     if (!sheet || sheet.getLastRow() <= 1) return [];
-    return sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues().map(function (r) {
+    const list = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues().map(function (r) {
       return { date: ymd_(r[0]), staff: String(r[1] || ''), memo: String(r[2] || '') };
     }).filter(function (m) {
       return m.date && m.memo && (!month || m.date.slice(0, 7) === month);
     }).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    // タイムカードの月シート（氏名_YYYY-MM）から出勤・退勤の時間を添える（2026-10-12 彩さん）
+    const ss = SpreadsheetApp.openById(TIMECARD_ID);
+    const cache = {};
+    list.forEach(function (m) {
+      const key = m.staff + '_' + m.date.slice(0, 7);
+      if (!(key in cache)) {
+        cache[key] = {};
+        const msh = ss.getSheetByName(key);
+        if (msh && msh.getLastRow() > 1) {
+          const fmt = function (v) {
+            if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'H:mm');
+            return String(v || '');
+          };
+          msh.getRange(2, 1, msh.getLastRow() - 1, 3).getValues().forEach(function (r) {
+            if (r[0]) cache[key][ymd_(r[0])] = { in: fmt(r[1]), out: fmt(r[2]) };
+          });
+        }
+      }
+      const t = cache[key][m.date] || {};
+      m.timeIn = t.in || ''; m.timeOut = t.out || '';
+    });
+    return list;
   } catch (e) {
     return [];
   }
