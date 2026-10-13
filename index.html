@@ -176,6 +176,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
       <input type="text" inputmode="numeric" id="a_amount" style="padding-left:26px"></div></div>
     <div style="margin-top:8px"><label>メモ（理由をここに書く）</label><input id="a_memo" placeholder="例：プラペン研修2時間"></div>
     <button class="btn wide" id="btnSaveAllow" style="margin-top:10px">登録する</button>
+    <button class="btn ghost wide" id="btnCancelEdit" style="margin-top:6px;display:none">編集をやめる</button>
   </div>
   <div class="card">
     <h2><span id="a_title">登録した分</span><button class="btn ghost sm" id="btnReloadAllow">更新</button></h2>
@@ -234,7 +235,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const BUILD = '20261013150233';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
+const BUILD = '20261013172319';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
 // GitHub Pages は10分間ブラウザに古い版を使わせるので、新しい版が出ていたら自分で読み直す（2026-10-02 彩さん「なってない」）
 async function checkBuild(){
   try{
@@ -848,12 +849,32 @@ $('#btnSaveAllow').onclick = () => busy($('#btnSaveAllow'), '登録していま�
               amount:Number(String($('#a_amount').value).replace(/[^0-9-]/g,''))||0,
               memo:$('#a_memo').value.trim() };
   if(!d.amount) return toast('金額を入れてください');
-  try{ await api('saveAllowance', d); toast('登録しました');
-    $('#a_amount').value=''; $('#a_memo').value=''; loadAllowances();
+  if(EDIT_ALLOW){ d.id = EDIT_ALLOW.id; d.reason = EDIT_ALLOW.reason; }   // 編集＝同じ行を上書き（理由は元のまま）
+  try{ await api('saveAllowance', d); toast(EDIT_ALLOW ? '変更しました' : '登録しました');
+    endEditAllowance(); $('#a_amount').value=''; $('#a_memo').value=''; loadAllowances();
   }catch(e){ toast(e.message); }
 });
 $('#a_amount').onblur = () => { const n = Number(String($('#a_amount').value).replace(/[^0-9]/g,'')); $('#a_amount').value = n ? n.toLocaleString('ja-JP') : ''; };
 $('#btnReloadAllow').onclick = () => busy($('#btnReloadAllow'), '…', loadAllowances);
+// 登録した分の編集（2026-10-13 彩さん「編集ボタンも付けれる？」）
+let ALLOW_ROWS = [], EDIT_ALLOW = null;
+function editAllowance(id){
+  const r = ALLOW_ROWS.find(x => String(x.id) === String(id)); if(!r) return;
+  EDIT_ALLOW = r;
+  $('#a_date').value = r.date;
+  if([...$('#a_staff').options].some(o=>o.value===r.staff)) $('#a_staff').value = r.staff;
+  $('#a_amount').value = Number(r.amount||0).toLocaleString('ja-JP');
+  $('#a_memo').value = r.memo || '';
+  $('#btnSaveAllow').textContent = '変更を保存する';
+  $('#btnCancelEdit').style.display = '';
+  $('#a_date').scrollIntoView({behavior:'smooth', block:'center'});
+}
+function endEditAllowance(){
+  EDIT_ALLOW = null;
+  $('#btnSaveAllow').textContent = '登録する';
+  $('#btnCancelEdit').style.display = 'none';
+}
+$('#btnCancelEdit').onclick = () => { endEditAllowance(); $('#a_amount').value=''; $('#a_memo').value=''; };
 $('#a_month').onchange = loadAllowances;
 $('#p_month').onchange = loadPayQueue;
 // タイムカードにメモが入っている日（日当が自動で付かない日）を、登録済みかどうか付きで出す
@@ -909,13 +930,14 @@ async function loadAllowances(){
     // 先にメモの日を読む（読むと時給の日が自動登録される）→ そのあと登録済みを読む（2026-10-13）
     let memo = []; try{ memo = await api('getMemoDays', {}, month?{month}:{}); }catch(e){}
     const rows = await api('getAllowances', {}, month?{month}:{});
+    ALLOW_ROWS = rows;
     loadMemoDays(month, rows, memo);
     if(!rows.length){ $('#allowList').innerHTML='<div class="mini">まだありません</div>'; return; }
     const sum = rows.reduce((a,r)=>a+r.amount,0);
     $('#allowList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th class="n">金額</th><th>メモ</th><th></th></tr>`
       + rows.map(r=>`<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.staff)}</td>
         <td class="n">${yen(r.amount)}</td><td>${esc(r.memo||'')}</td>
-        <td><button class="del" onclick="removeAllowance('${r.id}')">削除</button></td></tr>`).join('')
+        <td style="white-space:nowrap"><button class="del" style="color:var(--rose-d)" onclick="editAllowance('${r.id}')">編集</button><button class="del" onclick="removeAllowance('${r.id}')">削除</button></td></tr>`).join('')
       + `<tr><td colspan="2"><b>合計</b></td><td class="n"><b>${yen(sum)}</b></td><td colspan="2"></td></tr></table>`;
   }catch(e){ $('#allowList').innerHTML=`<div class="ng">${esc(e.message)}</div>`; }
 }
