@@ -4,7 +4,7 @@
   python3 salary_slip.py 2026-08 中田有加 [--extra 2026-08-06:1200:プラペン研修2時間（600円×2）]
 
 売上日報のウェブアプリ（getSalary / getIncentive）とタイムカードから材料を取り、
-何に対していくら出ているかを1行ずつ並べる。出力は iCloud の 業務委託／報酬明細。
+何に対していくら出ているかを1行ずつ並べる。出力は Google ドライブ ＞ Bemolle ＞ 報酬明細（フォルダIDで固定）。
 --extra は、システムにまだ入っていない特別日当を手で足すとき用（無ければ不要）。
 """
 import json, os, sys, urllib.request, urllib.parse, collections, datetime, re
@@ -64,8 +64,12 @@ def round5(tin, tout):
     return f'{a // 60}:{a % 60:02d}〜{b // 60}:{b % 60:02d}'
 
 
+# 置き場所はフォルダIDで固定（Googleドライブ ＞ Bemolle ＞ 報酬明細）。名前で探すと同名フォルダが複数ある時に違う方へ入る
+# （2026-10-13 iCloud→Googleドライブ引っ越しで「業務委託／報酬明細」も同名になった）
+PAYSLIP_FOLDER_ID = '1AyzOSTECvuGdufRKoMHvGBD8WBg5JpI'
+
 def upload_to_drive(path, folder_name='報酬明細'):
-    """Google ドライブの「報酬明細」フォルダへ置く。同じ名前があれば差し替える"""
+    """Google ドライブ ＞ Bemolle ＞ 報酬明細（PAYSLIP_FOLDER_ID）へ置く。同じ名前があれば差し替える"""
     at = gtoken()
     H = {'Authorization': 'Bearer ' + at}
     def j(url, method='GET', body=None, headers=None):
@@ -73,10 +77,10 @@ def upload_to_drive(path, folder_name='報酬明細'):
         h = dict(H); h.update(headers or {})
         if isinstance(body, dict): h['Content-Type'] = 'application/json'
         return json.load(urllib.request.urlopen(urllib.request.Request(url, data=data, method=method, headers=h)))
-    q = urllib.parse.urlencode({'q': f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false", 'fields': 'files(id)'})
-    f = j('https://www.googleapis.com/drive/v3/files?' + q).get('files', [])
-    fid = f[0]['id'] if f else j('https://www.googleapis.com/drive/v3/files?fields=id', 'POST',
-                                  {'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder'})['id']
+    fid = PAYSLIP_FOLDER_ID
+    chk = j(f'https://www.googleapis.com/drive/v3/files/{fid}?fields=id,name,trashed')
+    if chk.get('trashed'):
+        raise SystemExit(f'⛔ 報酬明細フォルダ（{fid}）がゴミ箱にある。置き場所を確認してから実行する')
     q2 = urllib.parse.urlencode({'q': f"name='{path.name}' and '{fid}' in parents and trashed=false", 'fields': 'files(id)'})
     old = j('https://www.googleapis.com/drive/v3/files?' + q2).get('files', [])
     boundary = 'xxBOUNDARYxx'
@@ -234,9 +238,9 @@ def main():
     html = build_html(staff, month, sal, inc, tc, extras)
     # 置き場所は Google ドライブの「報酬明細」フォルダ（PCを閉じていても毎月1日に自動で作るため。
     # 2026-09-21 彩さん「10月1日に作ってOK　PC閉じてても作る？」）。
-    # Macで動かしたときは iCloud の業務委託／報酬明細 にも同じものを置く
-    icloud = Path.home() / 'Library/Mobile Documents/com~apple~CloudDocs/紫妃彩/Bemolle/スタッフ/業務委託/報酬明細'
-    out_dir = icloud if icloud.parent.exists() else Path('out')
+    # 2026-10-13 iCloud をやめて Google ドライブに一本化（彩さん「全てGoogleドライブに引っ越す」）。
+    # PDFは作業用に out/ に作り、置き場所は upload_to_drive の Google ドライブ ＞ Bemolle ＞ 報酬明細 だけ
+    out_dir = Path('out')
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f'{staff}_{month[:4]}年{int(month[5:])}月_報酬明細.pdf'
     from playwright.sync_api import sync_playwright
