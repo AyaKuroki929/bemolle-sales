@@ -78,6 +78,61 @@ def click_text(page, label):
             continue
     return False
 
+def login(page, outdir='.'):
+    """うらかたさんにログインする（すでにログイン済みなら何もしない）"""
+    email = os.environ.get('URAKATA_EMAIL', '')
+    password = os.environ.get('URAKATA_PASSWORD', '')
+    page.goto(BASE, wait_until='networkidle', timeout=60000)
+    page.wait_for_timeout(3000)
+    # ── ログイン（すでにログイン済みなら飛ばす）
+    if not page.query_selector('text=売上管理'):
+        for label in ['ログイン', 'ログイン / 新規登録', 'Log in', 'サインイン']:
+            if click_text(page, label):
+                page.wait_for_timeout(2500)
+                break
+        mail = page.query_selector('input[type=email]') or page.query_selector('input[name*=mail i]')
+        pw = page.query_selector('input[type=password]')
+        if not (mail and pw):
+            page.screenshot(path=os.path.join(outdir, 'login_error.png'), full_page=True)
+            sys.exit('ログイン欄が見つかりませんでした（login_error.png を確認）')
+        mail.fill(email)
+        pw.fill(password)
+        pw.press('Enter')
+        page.wait_for_timeout(6000)
+        if not page.query_selector('text=売上管理'):
+            for label in ['ログイン', 'Log in', '送信']:
+                if click_text(page, label):
+                    break
+            page.wait_for_timeout(6000)
+    if not page.query_selector('text=売上管理'):
+        page.screenshot(path=os.path.join(outdir, 'login_error.png'), full_page=True)
+        sys.exit('ログインできませんでした（login_error.png を確認）')
+
+
+def open_month(page, year, mon):
+    """売上管理を開いて年月を選ぶ。mon は '08' でも '8' でもよい"""
+    # ── 売上管理へ
+    # 年月の選択欄が描画されるまで待つ（固定5秒では間に合わない夜があった 2026-09-26）。
+    # 出なければ1回だけ読み直す
+    sels = []
+    for attempt in range(2):
+        page.goto(BASE + '/reports_income', wait_until='networkidle', timeout=60000)
+        try:
+            page.wait_for_selector('select', timeout=40000)
+        except Exception:
+            pass
+        page.wait_for_timeout(3000)
+        sels = page.query_selector_all('select')
+        if len(sels) >= 2:
+            break
+        print(f'年月の選択欄がまだ出ていません（{attempt + 1}回目）。読み直します')
+    if len(sels) < 2:
+        sys.exit('年月の選択欄が見つかりませんでした')
+    sels[0].select_option(label=str(year))
+    page.wait_for_timeout(1500)
+    sels[1].select_option(label=str(int(mon)))
+    page.wait_for_timeout(4000)
+
 
 def main():
     from playwright.sync_api import sync_playwright
@@ -92,54 +147,8 @@ def main():
         ctx = browser.new_context(viewport={'width': 1400, 'height': 6000}, locale='ja-JP')
         page = ctx.new_page()
         try:
-            page.goto(BASE, wait_until='networkidle', timeout=60000)
-            page.wait_for_timeout(3000)
-
-            # ── ログイン（すでにログイン済みなら飛ばす）
-            if not page.query_selector('text=売上管理'):
-                for label in ['ログイン', 'ログイン / 新規登録', 'Log in', 'サインイン']:
-                    if click_text(page, label):
-                        page.wait_for_timeout(2500)
-                        break
-                mail = page.query_selector('input[type=email]') or page.query_selector('input[name*=mail i]')
-                pw = page.query_selector('input[type=password]')
-                if not (mail and pw):
-                    page.screenshot(path=os.path.join(OUTDIR, 'login_error.png'), full_page=True)
-                    sys.exit('ログイン欄が見つかりませんでした（login_error.png を確認）')
-                mail.fill(email)
-                pw.fill(password)
-                pw.press('Enter')
-                page.wait_for_timeout(6000)
-                if not page.query_selector('text=売上管理'):
-                    for label in ['ログイン', 'Log in', '送信']:
-                        if click_text(page, label):
-                            break
-                    page.wait_for_timeout(6000)
-            if not page.query_selector('text=売上管理'):
-                page.screenshot(path=os.path.join(OUTDIR, 'login_error.png'), full_page=True)
-                sys.exit('ログインできませんでした（login_error.png を確認）')
-
-            # ── 売上管理へ
-            # 年月の選択欄が描画されるまで待つ（固定5秒では間に合わない夜があった 2026-09-26）。
-            # 出なければ1回だけ読み直す
-            sels = []
-            for attempt in range(2):
-                page.goto(BASE + '/reports_income', wait_until='networkidle', timeout=60000)
-                try:
-                    page.wait_for_selector('select', timeout=40000)
-                except Exception:
-                    pass
-                page.wait_for_timeout(3000)
-                sels = page.query_selector_all('select')
-                if len(sels) >= 2:
-                    break
-                print(f'年月の選択欄がまだ出ていません（{attempt + 1}回目）。読み直します')
-            if len(sels) < 2:
-                sys.exit('年月の選択欄が見つかりませんでした')
-            sels[0].select_option(label=YEAR)
-            page.wait_for_timeout(1500)
-            sels[1].select_option(label=str(int(MON)))
-            page.wait_for_timeout(4000)
+            login(page, OUTDIR)
+            open_month(page, YEAR, MON)
 
             all_rows = []
             for tab in ['物販', 'サービス', 'コース']:

@@ -1,0 +1,60 @@
+name: 今月の誕生日リストを作る
+
+on:
+  schedule:
+    # 毎月1日 1:00 JST。cronは「月末日」を書けないので、28〜31日の16:00 UTC（＝翌日1:00 JST）に起動し、
+    # 日本時間で1日のときだけ先へ進む（0時の売上取り込みと重ならないよう1時間ずらす）
+    - cron: '0 16 28-31 * *'
+  workflow_dispatch:
+    inputs:
+      month:
+        description: '作る月（例 2026-11）。空なら今月'
+        required: false
+
+jobs:
+  birthdays:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: 日本時間で1日か確かめる
+        id: day
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(TZ=Asia/Tokyo date +%d)" != "01" ]; then
+            echo "go=no" >> $GITHUB_OUTPUT; echo "今日は1日ではないので何もしません"
+          else
+            echo "go=yes" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.day.outputs.go == 'yes'
+      - uses: actions/setup-python@v5
+        if: steps.day.outputs.go == 'yes'
+        with:
+          python-version: '3.11'
+
+      - name: Playwrightを入れる
+        if: steps.day.outputs.go == 'yes'
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      # ⚠️ このリポジトリは公開。ログには件数だけを出し、お客様の名前・誕生日は出さない
+      - name: うらかたさんから作ってスプレッドシートに入れる
+        if: steps.day.outputs.go == 'yes'
+        env:
+          URAKATA_EMAIL: ${{ secrets.URAKATA_EMAIL }}
+          URAKATA_PASSWORD: ${{ secrets.URAKATA_PASSWORD }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: |
+          set -o pipefail
+          M="${{ github.event.inputs.month }}"
+          [ -z "$M" ] && M=$(TZ=Asia/Tokyo date +%Y-%m)
+          python3 fetch_birthdays.py "$M" 2>&1 | tee -a out.txt
+
+      - name: 失敗したときLINEで知らせる
+        if: failure()
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 notify_line.py "🚨 今月の誕生日リストが作れませんでした"
