@@ -7,8 +7,8 @@
 決まりごと（2026-10-13 彩さん）
   ・誕生日はうらかたさんの顧客管理から取る
   ・スタッフは外す（顧客管理のメモに「スタッフ」とある人／売上日報のスタッフ一覧にいる人）
-  ・直近1年に、体験メニュー以外の記録（物販・コース・体験以外のサービス）が1つも無い人は外す
-    ＝体験だけの人と、1年以上来ていない人が外れる
+  ・直近1年に「コースの記録がある」か「商品を別々の日に2回以上買った（定期便を含む）」人だけ残す
+    ＝体験・サービスメニューだけの人、商品を1回買っただけの人、1年以上来ていない人が外れる（2026-10-13 彩さん）
 
 ⚠️ このリポジトリは公開。ログにお客様の名前・誕生日を出さない（件数だけ出す）。
 """
@@ -131,7 +131,7 @@ def main():
     tm = int(TARGET[5:])
     # 直近1年＝対象月を含めて13か月（1日に動くと対象月はほぼ空。前の12か月がまるごと入る）
     span = months_back(TARGET, 13)
-    real, last_visit, service_names = set(), {}, {}
+    course, buy_days, last_visit, service_names = set(), {}, {}, {}
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -146,9 +146,10 @@ def main():
                     k = norm(cust)
                     if tab == 'サービス':
                         service_names[name] = service_names.get(name, 0) + 1
-                    taiken = (tab == 'サービス' and '体験' in name)
-                    if not taiken:
-                        real.add(k)
+                    if tab == 'コース':
+                        course.add(k)
+                    elif tab == '物販':
+                        buy_days.setdefault(k, set()).add(d)
                     # 来店日：毎月1日の物販は定期便の発送なので来店に数えない
                     if not (tab == '物販' and d.endswith('/01')):
                         if d > last_visit.get(k, ''):
@@ -162,6 +163,7 @@ def main():
     print(f'顧客管理 {len(customers)}人（誕生日あり {len(with_bd)}人）')
     if len(customers) < 40 or not with_bd:
         sys.exit('顧客一覧が少なすぎます。読み込みが途中で止まった可能性があります')
+    real = course | {k for k, ds in buy_days.items() if len(ds) >= 2}
     known = {norm(c['名前']) for c in customers}
     missing = len([k for k in real if k not in known])
     if missing:
@@ -186,7 +188,7 @@ def main():
                     datetime.datetime.now(JST).strftime('%Y-%m-%d %H:%M')])
     out.sort(key=lambda r: r[2][5:])
     print(f'{TARGET}が誕生日 {len(month_people)}人 → スタッフ除外 {n_staff}人・'
-          f'体験のみ／1年来店なし除外 {n_drop}人 → 載せる {len(out)}人')
+          f'コースなし・商品2回未満で除外 {n_drop}人 → 載せる {len(out)}人')
     if DRY:
         print('（--dry なので書き込みません）')
         return
