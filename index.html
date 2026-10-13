@@ -234,7 +234,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const BUILD = '20261013143707';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
+const BUILD = '20261013150233';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
 // GitHub Pages は10分間ブラウザに古い版を使わせるので、新しい版が出ていたら自分で読み直す（2026-10-02 彩さん「なってない」）
 async function checkBuild(){
   try{
@@ -858,9 +858,9 @@ $('#a_month').onchange = loadAllowances;
 $('#p_month').onchange = loadPayQueue;
 // タイムカードにメモが入っている日（日当が自動で付かない日）を、登録済みかどうか付きで出す
 let MEMODAYS = [];
-async function loadMemoDays(month, rows){
+async function loadMemoDays(month, rows, pre){
   try{
-    MEMODAYS = await api('getMemoDays', {}, month?{month}:{});
+    MEMODAYS = pre || await api('getMemoDays', {}, month?{month}:{});
     if(!MEMODAYS.length){ $('#memoDays').innerHTML = `<div class="mini">${esc(month||'')} タイムカードにメモが入っている日はありません</div>`; return; }
     const done = {}; (rows||[]).forEach(r => { done[r.date+'|'+r.staff] = (done[r.date+'|'+r.staff]||0) + r.amount; });
     $('#memoDays').innerHTML = `<div class="mini" style="margin-bottom:4px">タイムカードにメモが入っている日（タップすると下の欄に入ります）</div>
@@ -906,8 +906,10 @@ function pickMemoDay(i){
 async function loadAllowances(){
   const month = $('#a_month').value;
   try{
+    // 先にメモの日を読む（読むと時給の日が自動登録される）→ そのあと登録済みを読む（2026-10-13）
+    let memo = []; try{ memo = await api('getMemoDays', {}, month?{month}:{}); }catch(e){}
     const rows = await api('getAllowances', {}, month?{month}:{});
-    loadMemoDays(month, rows);
+    loadMemoDays(month, rows, memo);
     if(!rows.length){ $('#allowList').innerHTML='<div class="mini">まだありません</div>'; return; }
     const sum = rows.reduce((a,r)=>a+r.amount,0);
     $('#allowList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th class="n">金額</th><th>メモ</th><th></th></tr>`

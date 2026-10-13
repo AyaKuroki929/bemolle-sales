@@ -715,6 +715,7 @@ function deleteStock(d) {
 // ─── 月次集計（税率別・支払方法別・未収）──────────────────
 function getSummary(month) {
   if (!month) month = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM');
+  autoRegisterMemoDays_(memoDaysList_(month));
   const all = loadAll_();
   const inMonth = function (v) { return ymd_(v).slice(0, 7) === month; };
 
@@ -943,7 +944,52 @@ function getIncentive(month) {
 /** タイムカードにメモが入っている日（＝日当¥5,000が自動で付かない日）を月ごとに返す。
  *  日当タブで「この日の金額を入れる」目印にする（2026-10-02 彩さん）。読めない時は空で返す */
 function getMemoDays(params) {
-  const month = params.month || '';
+  const list = memoDaysList_(params.month || '');
+  autoRegisterMemoDays_(list);
+  return list;
+}
+
+// メモが入る日＝時給の日だけ（2026-10-13 彩さん「メモは時給の日しか入りません。メモが入ってたら計算と登録自動でして」）。
+// 5分丸め（開始切り上げ・終了切り捨て）の時間 × 600円 を特別日当に自動登録する。
+// 同じ日・同じスタッフの特別日当がすでにあれば何もしない。一度自動登録した日は印を残し、彩さんが削除しても作り直さない。
+// 退勤がまだ無い日（当日など）は登録しない＝打刻がそろった次の表示で登録される
+const HOURLY_PAY = 600;
+function round5Mins_(tin, tout) {
+  const mins = function (t) { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+  let a = mins(tin), b = mins(tout);
+  if (a === null || b === null) return 0;
+  a = Math.ceil(a / 5) * 5; b = Math.floor(b / 5) * 5;
+  return b > a ? b - a : 0;
+}
+function autoRegisterMemoDays_(list) {
+  try {
+    if (!list || !list.length) return 0;
+    const props = PropertiesService.getScriptProperties();
+    const done = JSON.parse(props.getProperty('AUTO_MEMO_DONE') || '{}');
+    const have = {};
+    getAllowances({}).forEach(function (a) { have[a.date + '|' + a.staff] = true; });
+    let n = 0;
+    list.forEach(function (m) {
+      const key = m.date + '|' + m.staff;
+      if (done[key] || have[key]) return;
+      const mn = round5Mins_(m.timeIn, m.timeOut);
+      if (!mn) return;
+      const amount = Math.round(mn * HOURLY_PAY / 60);
+      const h = Math.floor(mn / 60) + '時間' + (mn % 60 ? (mn % 60) + '分' : '');
+      saveAllowance({ date: m.date, staff: m.staff, amount: amount, reason: '短時間勤務',
+                      memo: (m.memo || '時給') + '（' + h + '×' + HOURLY_PAY + '円・自動）' });
+      done[key] = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
+      n++;
+    });
+    if (n) props.setProperty('AUTO_MEMO_DONE', JSON.stringify(done));
+    return n;
+  } catch (e) {
+    console.error('autoRegisterMemoDays_: ' + e);
+    return 0;
+  }
+}
+
+function memoDaysList_(month) {
   try {
     const sheet = SpreadsheetApp.openById(TIMECARD_ID).getSheetByName('日報メモ');
     if (!sheet || sheet.getLastRow() <= 1) return [];
@@ -1004,6 +1050,7 @@ function getTimecard(month, staff) {
 /** 月のお給料を1本にまとめる：日当 ＋ 特別日当 ＋ インセンティブ */
 function getSalary(month) {
   if (!month) month = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM');
+  autoRegisterMemoDays_(memoDaysList_(month));   // 明細・給料計算の前に、メモの日（時給）を登録しておく
   const inc = getIncentive(month);
   const allowances = getAllowances({ month: month });
   const extra = {};

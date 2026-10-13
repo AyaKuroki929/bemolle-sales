@@ -1,0 +1,18 @@
+name: API check (手動・メモの日の自動登録を確かめる)
+on:
+  workflow_dispatch:
+    inputs:
+      month: { description: "YYYY-MM", required: true, default: "2026-10" }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: getMemoDays → getAllowances
+        env:
+          PIN: ${{ secrets.BEMOLLE_PIN }}
+          M: ${{ github.event.inputs.month }}
+        run: |
+          U="https://script.google.com/macros/s/AKfycbw5r9qSAxC613fnqJOdlRsj1ORblpDGGf_IhuYPmJZwfk4kfOGqBxJ4D-OWBicezim7/exec"
+          curl -sL "$U?action=getMemoDays&month=$M&pin=$PIN" | python3 -c "import json,sys;d=json.load(sys.stdin);print('memo',d.get('ok'),d.get('error'),[(m['date'],m['staff'],m.get('timeIn'),m.get('timeOut'),m['memo']) for m in d.get('data') or []])"
+          curl -sL "$U?action=getAllowances&month=$M&pin=$PIN" | python3 -c "import json,sys;d=json.load(sys.stdin);print('allow',d.get('ok'),d.get('error'),[(a['date'],a['staff'],a['amount'],a['memo']) for a in d.get('data') or []])"
