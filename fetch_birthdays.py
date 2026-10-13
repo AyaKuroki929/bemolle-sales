@@ -17,6 +17,7 @@ import os, sys, re, time, datetime, unicodedata
 
 ARGS = [a for a in sys.argv[1:] if not a.startswith('--')]
 DRY = '--dry' in sys.argv
+SKIP_IF_DONE = '--skip-if-done' in sys.argv   # 下で sys.argv を書き換える前に読んでおく
 JST = datetime.timezone(datetime.timedelta(hours=9))
 TARGET = ARGS[0] if ARGS else datetime.datetime.now(JST).strftime('%Y-%m')
 if not re.fullmatch(r'\d{4}-\d{2}', TARGET):
@@ -147,7 +148,7 @@ def record_done(ssid, at, n):
 
 def main():
     from playwright.sync_api import sync_playwright
-    if '--skip-if-done' in sys.argv:
+    if SKIP_IF_DONE:
         at0 = isl.access_token()
         ss0 = os.environ.get('SHEET_ID') or open(os.path.join(isl.HERE, 'sheet_id.txt')).read().strip()
         if TARGET in done_months(ss0, at0):
