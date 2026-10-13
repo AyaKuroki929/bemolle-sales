@@ -2,7 +2,8 @@
 """今月が誕生日のお客様を、売上日報のスプレッドシート「誕生日」シートに書き出す。
 毎月1日に GitHub Actions（birthdays.yml）が動かす。売上日報の画面「誕生日」タブがこのシートを読む。
 
-  python3 fetch_birthdays.py [2026-11] [--dry]
+  python3 fetch_birthdays.py [2026-11] [--dry] [--skip-if-done]
+  --skip-if-done … その月がもう作られていれば何もしない（1日の1時・4時・7時に起動し、9時には必ずできている形）
 
 決まりごと（2026-10-13 彩さん）
   ・誕生日はうらかたさんの顧客管理から取る
@@ -12,7 +13,7 @@
 
 ⚠️ このリポジトリは公開。ログにお客様の名前・誕生日を出さない（件数だけ出す）。
 """
-import os, sys, re, datetime, unicodedata
+import os, sys, re, time, datetime, unicodedata
 
 ARGS = [a for a in sys.argv[1:] if not a.startswith('--')]
 DRY = '--dry' in sys.argv
@@ -25,6 +26,7 @@ import fetch_urakata as fu
 import import_sales as isl
 
 SHEET = '誕生日'
+LOG_SHEET = '誕生日_作成記録'          # 対象月・作成日時・人数（0人の月も「作った」と分かるように）
 HEAD = ['対象月', 'お客様', '誕生日', '最後の来店日', '作成日時']
 
 
@@ -123,45 +125,85 @@ def write_sheet(ssid, at, rows):
     return len(back)
 
 
+def done_months(ssid, at):
+    try:
+        return {r[0] for r in isl.read(ssid, at, LOG_SHEET) if r}
+    except Exception:
+        return set()                             # シートがまだ無い＝どの月も作っていない
+
+
+def record_done(ssid, at, n):
+    base = f'https://sheets.googleapis.com/v4/spreadsheets/{ssid}'
+    meta = isl.api(base + '?fields=sheets.properties.title', at)
+    if LOG_SHEET not in [s['properties']['title'] for s in meta['sheets']]:
+        isl.api(base + ':batchUpdate', at, 'POST',
+                {'requests': [{'addSheet': {'properties': {'title': LOG_SHEET}}}]})
+    rows = [isl.pad(r, 3) for r in isl.read(ssid, at, LOG_SHEET) if r and r[0] != TARGET]
+    rows.append([TARGET, datetime.datetime.now(JST).strftime('%Y-%m-%d %H:%M'), str(n)])
+    isl.api(f"{base}/values/{isl.urllib.parse.quote(f'{LOG_SHEET}!A1:C')}:clear", at, 'POST', {})
+    isl.api(f"{base}/values/{isl.urllib.parse.quote(f'{LOG_SHEET}!A1')}?valueInputOption=RAW", at, 'PUT',
+            {'values': [['対象月', '作成日時', '人数']] + rows})
+
+
 def main():
     from playwright.sync_api import sync_playwright
+    if '--skip-if-done' in sys.argv:
+        at0 = isl.access_token()
+        ss0 = os.environ.get('SHEET_ID') or open(os.path.join(isl.HERE, 'sheet_id.txt')).read().strip()
+        if TARGET in done_months(ss0, at0):
+            print(f'{TARGET}の誕生日リストはもう作ってあるので、何もしません')
+            return
     if not os.environ.get('URAKATA_EMAIL') or not os.environ.get('URAKATA_PASSWORD'):
         sys.exit('URAKATA_EMAIL と URAKATA_PASSWORD を環境変数に設定してください')
     os.makedirs('out', exist_ok=True)
     tm = int(TARGET[5:])
     # 直近1年＝対象月を含めて13か月（1日に動くと対象月はほぼ空。前の12か月がまるごと入る）
     span = months_back(TARGET, 13)
-    course, buy_days, last_visit, service_names = set(), {}, {}, {}
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context(viewport={'width': 1400, 'height': 6000}, locale='ja-JP')
-        page = ctx.new_page()
+    customers = None
+    for attempt in range(1, 4):                  # うらかたさんが開かない夜がある（2026-10-13 60秒タイムアウト）
+        course, buy_days, last_visit, service_names = set(), {}, {}, {}
         try:
-            fu.login(page, 'out')
-            for y, m in span:
-                rows = read_month(page, y, m)
-                print(f'  {y}-{m:02d}: {len(rows)}件')
-                for tab, d, name, cust in rows:
-                    k = norm(cust)
-                    if tab == 'サービス':
-                        service_names[name] = service_names.get(name, 0) + 1
-                    if tab == 'コース':
-                        course.add(k)
-                    elif tab == '物販':
-                        buy_days.setdefault(k, set()).add(d)
-                    # 来店日：毎月1日の物販は定期便の発送なので来店に数えない
-                    if not (tab == '物販' and d.endswith('/01')):
-                        if d > last_visit.get(k, ''):
-                            last_visit[k] = d
-            customers = read_customers(page)
-        finally:
-            browser.close()
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                ctx = browser.new_context(viewport={'width': 1400, 'height': 6000}, locale='ja-JP')
+                page = ctx.new_page()
+                try:
+                    fu.login(page, 'out')
+                    for y, m in span:
+                        rows = read_month(page, y, m)
+                        print(f'  {y}-{m:02d}: {len(rows)}件')
+                        for tab, d, name, cust in rows:
+                            k = norm(cust)
+                            if tab == 'サービス':
+                                service_names[name] = service_names.get(name, 0) + 1
+                            if tab == 'コース':
+                                course.add(k)
+                            elif tab == '物販':
+                                buy_days.setdefault(k, set()).add(d)
+                            # 来店日：毎月1日の物販は定期便の発送なので来店に数えない
+                            if not (tab == '物販' and d.endswith('/01')):
+                                if d > last_visit.get(k, ''):
+                                    last_visit[k] = d
+                    customers = read_customers(page)
+                finally:
+                    browser.close()
+            if len(customers) < 40:
+                raise RuntimeError(f'顧客一覧が{len(customers)}人しか読めませんでした')
+            break
+        except BaseException as e:               # sys.exit も含めてやり直す
+            if isinstance(e, KeyboardInterrupt):
+                raise
+            print(f'⚠️ {attempt}回目は失敗しました（{str(e).splitlines()[0][:120]}）')
+            customers = None
+            if attempt < 3:
+                time.sleep(60)
+    if customers is None:
+        sys.exit('3回試しましたが、うらかたさんから読めませんでした')
 
     print(f'サービスのメニュー名: {service_names}')
     with_bd = [c for c in customers if c['誕生日']]
     print(f'顧客管理 {len(customers)}人（誕生日あり {len(with_bd)}人）')
-    if len(customers) < 40 or not with_bd:
+    if not with_bd:
         sys.exit('顧客一覧が少なすぎます。読み込みが途中で止まった可能性があります')
     real = course | {k for k, ds in buy_days.items() if len(ds) >= 2}
     known = {norm(c['名前']) for c in customers}
@@ -193,6 +235,7 @@ def main():
         print('（--dry なので書き込みません）')
         return
     n = write_sheet(ssid, at, out)
+    record_done(ssid, at, n)
     print(f'✅ 「{SHEET}」シートに{n}人を書き込みました')
 
 
