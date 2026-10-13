@@ -91,6 +91,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <button data-t="pay" class="on">支払入力</button>
     <button data-t="stock">在庫払出</button>
     <button data-t="unpaid">未収</button>
+    <button data-t="bday">誕生日</button>
     <button data-t="allow">日当</button>
     <button data-t="take">棚卸し</button>
     <button data-t="sum">税理士用</button>
@@ -147,6 +148,17 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <h2>後日いただく分<button class="btn ghost sm" id="btnReloadUnpaid">更新</button></h2>
     <div id="unpaidList"></div>
   </div>
+</section>
+
+<!-- ══ 誕生日 ══ -->
+<section id="bday">
+  <div class="card">
+    <h2>今月が誕生日のお客様<button class="btn ghost sm" id="btnReloadBday">更新</button></h2>
+    <div class="row"><div><select id="b_month"></select></div></div>
+    <div class="mini" style="margin-top:6px">毎月1日にうらかたさんの顧客管理から作ります。スタッフと、直近1年にコースの記録も商品の2回以上のお買い上げもない方（サービスメニューだけ・商品1回だけ・1年来店なし）は載りません</div>
+    <div id="b_stamp" class="mini" style="margin-top:4px"></div>
+  </div>
+  <div id="bdayList"></div>
 </section>
 
 <!-- ══ 日当 ══ -->
@@ -222,7 +234,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const BUILD = '20261013114128';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
+const BUILD = '20261013141347';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
 // GitHub Pages は10分間ブラウザに古い版を使わせるので、新しい版が出ていたら自分で読み直す（2026-10-02 彩さん「なってない」）
 async function checkBuild(){
   try{
@@ -324,6 +336,7 @@ $$('nav button').forEach(b => b.onclick = () => {
   if(b.dataset.t==='allow') loadAllowances();
   if(b.dataset.t==='stock') loadStocks();
   if(b.dataset.t==='unpaid') loadUnpaid();
+  if(b.dataset.t==='bday') loadBirthdays();
   if(b.dataset.t==='take') loadStocktake();
   if(b.dataset.t==='conf') renderMasters();
 });
@@ -448,6 +461,8 @@ async function removeStock(id){
 
 // ─── 未収 ───
 $('#btnReloadUnpaid').onclick = () => busy($('#btnReloadUnpaid'), '…', loadUnpaid);
+$('#btnReloadBday').onclick = () => busy($('#btnReloadBday'), '…', loadBirthdays);
+$('#b_month').onchange = loadBirthdays;
 async function loadUnpaid(){
   $('#unpaidList').innerHTML = '<div class="card mini">読み込み中…</div>';
   const stopNote = slowNote($('#unpaidList'), loadUnpaid);
@@ -467,6 +482,32 @@ async function loadUnpaid(){
   }catch(e){
     $('#unpaidList').innerHTML = `<div class="card ng">${esc(e.message)}<br>
       <button class="btn ghost sm" style="margin-top:8px" onclick="loadUnpaid()">やり直す</button></div>`;
+  }finally{ stopNote(); }
+}
+// ─── 誕生日 ───
+async function loadBirthdays(){
+  const month = $('#b_month').value;
+  $('#bdayList').innerHTML = '<div class="card mini">読み込み中…</div>';
+  $('#b_stamp').textContent = '';
+  const stopNote = slowNote($('#bdayList'), loadBirthdays);
+  try{
+    const d = await api('getBirthdays', {}, {month});
+    $('#b_stamp').textContent = d.made ? `作成：${d.made}` : '';
+    if(!d.rows.length){
+      $('#bdayList').innerHTML = `<div class="card mini">${d.made ? 'この月が誕生日の方はいません' : 'この月の一覧はまだ作られていません（毎月1日に作ります）'}</div>`;
+      return;
+    }
+    $('#bdayList').innerHTML = '<div class="card">' + d.rows.map(r => {
+      const [y,m,dd] = r.birthday.split('/');
+      return `<div class="line" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div><div class="nm">${esc(r.name)} 様</div>
+          <div class="mini">最後の来店：${esc(r.last || '記録なし')}</div></div>
+        <div style="text-align:right"><b>${Number(m)}月${Number(dd)}日</b><div class="mini">${esc(y)}年生まれ</div></div>
+      </div>`;
+    }).join('') + `<div class="mini" style="margin-top:8px">${d.rows.length}名</div></div>`;
+  }catch(e){
+    $('#bdayList').innerHTML = `<div class="card ng">${esc(e.message)}<br>
+      <button class="btn ghost sm" style="margin-top:8px" onclick="loadBirthdays()">やり直す</button></div>`;
   }finally{ stopNote(); }
 }
 async function settle(btn, id){
@@ -899,7 +940,7 @@ async function boot(silent){
       const q = new URLSearchParams(location.search).get('month');
       const m = /^\d{4}-\d{2}$/.test(q || '') ? q : d.month;
       $('#k_date').value = d.today;
-      fillMonths($('#p_month'), m); fillMonths($('#s_month'), m); fillMonths($('#a_month'), m);
+      fillMonths($('#p_month'), m); fillMonths($('#s_month'), m); fillMonths($('#a_month'), m); fillMonths($('#b_month'), m);
       $('#a_date').value = d.today;
     }
   }catch(e){ if(!silent) toast('接続できません：' + e.message, 5000); }

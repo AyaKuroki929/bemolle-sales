@@ -137,6 +137,7 @@ function handle(params, body) {
       case 'getSalary':       result = getSalary(params.month);    break;
       case 'exportCsv':       result = exportCsv(params.month);    break;
       case 'getStocktake':    result = getStocktake();             break;
+      case 'getBirthdays':    result = getBirthdays(params.month); break;
       case 'checkPin':        result = { ok: ((d.pin != null ? d.pin : params.pin) || '') === getStoredPin() }; break;
       case 'changePin':       result = changePin(d);               break;
       case 'keepWarm':        result = { ok: true };               break;
@@ -1068,6 +1069,26 @@ function exportCsv(month) {
 }
 
 /** 棚卸し。うらかたさんから毎晩取り込んだ在庫数 × 仕入値 で、税率別の棚卸高を出す */
+// 今月が誕生日のお客様。毎月1日に fetch_birthdays.py が「誕生日」シートに書く（2026-10-13 彩さん）
+function getBirthdays(month) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let made = '';
+  if (ss.getSheetByName('誕生日_作成記録')) {       // 0人の月も「作った」と分かるように別シートで持つ
+    readSheet_('誕生日_作成記録').forEach(function (r) {
+      if (String(r['対象月']) === String(month)) made = String(r['作成日時']);
+    });
+  }
+  if (!ss.getSheetByName('誕生日')) return { month: month, made: made, rows: [] };
+  const rows = readSheet_('誕生日').filter(function (r) { return String(r['対象月']) === String(month); });
+  return {
+    month: month,
+    made: made,
+    rows: rows.map(function (r) {
+      return { name: String(r['お客様']), birthday: String(r['誕生日']), last: String(r['最後の来店日'] || '') };
+    })
+  };
+}
+
 function getStocktake() {
   const rows = readSheet_(SH_PRODUCTS).filter(function (r) {
     return String(r['商品名']).trim() && r['有効'] !== false && r['有効'] !== 'FALSE';
