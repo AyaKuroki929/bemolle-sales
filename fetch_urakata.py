@@ -115,7 +115,8 @@ def open_month(page, year, mon):
     # 年月の選択欄が描画されるまで待つ（固定5秒では間に合わない夜があった 2026-09-26）。
     # 出なければ1回だけ読み直す
     sels = []
-    for attempt in range(2):
+    tries = 3
+    for attempt in range(tries):
         page.goto(BASE + '/reports_income', wait_until='networkidle', timeout=60000)
         try:
             page.wait_for_selector('select', timeout=40000)
@@ -125,7 +126,13 @@ def open_month(page, year, mon):
         sels = page.query_selector_all('select')
         if len(sels) >= 2:
             break
-        print(f'年月の選択欄がまだ出ていません（{attempt + 1}回目）。読み直します')
+        if attempt < tries - 1:
+            # 40秒待っても出ない夜は、続けて読み直しても出ないことが多い。
+            # 少し間を置いてから読み直す（2026-10-16 3:48の失敗を受けて2回→3回＋間に10秒）
+            print(f'年月の選択欄がまだ出ていません（{attempt + 1}回目）。10秒おいて読み直します')
+            page.wait_for_timeout(10000)
+        else:
+            print(f'年月の選択欄がまだ出ていません（{attempt + 1}回目）')
     if len(sels) < 2:
         sys.exit('年月の選択欄が見つかりませんでした')
     sels[0].select_option(label=str(year))
