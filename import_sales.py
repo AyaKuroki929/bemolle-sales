@@ -267,6 +267,7 @@ def main():
     print('種別:', dict(collections.Counter(d[3] for d in details)))
     for c in changed: print('  ⚠️ 要確認:', c)
     if dry:
+        print(f'うらかたさんから消えた会計: {len(gone)}件（dry なので消しません）')
         for s in sales[:5]: print('  ', s[0], s[1], s[6:9])   # 名前は出さない（公開ログ対策）
         return
     # ① 書き込む前に控えを取る（失敗しても支払方法が戻せるように）

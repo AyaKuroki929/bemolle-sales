@@ -6,91 +6,31 @@ GitHub Actions（PCを開かなくても動く）でもローカルでも使え�
   URAKATA_EMAIL, URAKATA_PASSWORD   … うらかたさんのログイン情報
 使い方:
   python3 fetch_urakata.py 2026-08 [出力先フォルダ]
+
+2026-10-18 うらかたさんが新システムに切り替わったので作り直した。
+  ・旧システム（Bubble）は一覧の文字を正規表現で読んでいたが、新システムは画面の裏に
+    データがそのまま入っている（window.__reactRouterContext.state.loaderData）。それを読む
+  ・月の切り替えはURLで指定できる（/dashboard/income?period=month&date=2026-09）
+  ・1明細の金額は「会計の金額」を正とする（旧システムの売上額と一致することを 2026-09 の
+    4件で確認。明細の unitPrice は定価のままのことがある）
 """
-import os, sys, csv, re, time
+import os, sys, csv, time, math
 
 MONTH = sys.argv[1] if len(sys.argv) > 1 else time.strftime('%Y-%m')
 OUTDIR = sys.argv[2] if len(sys.argv) > 2 else '.'
 YEAR, MON = MONTH.split('-')
 BASE = 'https://urakatasan.jp'
 
-ROW_RE = re.compile(
-    r'^(.*?)日付：(\d{4}/\d{2}/\d{2})(?:数量：(\d*))?お客様：(.*?)様売上額：([\d,\-]+)円'
-    r'(✅消化)?(?:メモ：(.*?))?(?:スタッフ：(.*?))?(?:編集|削除)')
+KIND_TAB = {'product': '物販', 'ordered_product': '物販', 'service': 'サービス', 'course': 'コース'}
 
-
-# タブごとに一覧（RepeatingGroup）が別々に存在する。ページ全体を読むと3タブ分が混ざる
-TAB_IDX = {'物販': 0, 'サービス': 1, 'コース': 2}
-YM = f'{YEAR}/{MON}/'
-
-
-def rg(page, tab):
-    gs = page.query_selector_all('[class*="RepeatingGroup"]')
-    if len(gs) <= TAB_IDX[tab]:
-        sys.exit(f'{tab}の一覧が見つかりませんでした（一覧は{len(gs)}個しかありません）')
-    return gs[TAB_IDX[tab]]
-
-
-def parse_rows(page, tab):
-    rows, other = [], 0
-    for el in rg(page, tab).query_selector_all(':scope > *'):
-        t = re.sub(r'\s', '', el.text_content() or '')
-        m = ROW_RE.match(t)
-        if not m:
-            continue
-        if not m.group(2).startswith(YM):          # 対象月以外が混じったら捨てる
-            other += 1
-            continue
-        rows.append({'区分': tab, '日付': m.group(2), '名称': m.group(1),
-                     '数量': m.group(3) or '1', '顧客': m.group(4),
-                     '金額': m.group(5).replace(',', ''),
-                     'スタッフ': (m.group(8) or '').strip(),
-                     '状態': '消化' if m.group(6) else ('契約' if tab == 'コース' else ''),
-                     'メモ': (m.group(7) or '').strip()})
-    if other:
-        print(f'    （{MONTH}以外の{other}件は除きました）')
-    return rows
-
-
-def load_all(page, tab):
-    """一覧は少しずつしか描画されないので、最後まで増えなくなるまでスクロールする"""
-    last, stable = -1, 0
-    for _ in range(40):
-        page.mouse.wheel(0, 20000)
-        page.wait_for_timeout(900)
-        n = len(rg(page, tab).query_selector_all(':scope > *'))
-        if n == last:
-            stable += 1
-            if stable >= 4:
-                break
-        else:
-            stable, last = 0, n
-    return last
-
-
-def click_text(page, label):
-    for el in page.query_selector_all('div,span,button,a'):
-        try:
-            if (el.text_content() or '').strip() == label and el.is_visible():
-                el.click()
-                return True
-        except Exception:
-            continue
-    return False
 
 def login(page, outdir='.'):
     """うらかたさんにログインする（すでにログイン済みなら何もしない）"""
     email = os.environ.get('URAKATA_EMAIL', '')
     password = os.environ.get('URAKATA_PASSWORD', '')
-    page.goto(BASE, wait_until='networkidle', timeout=60000)
-    page.wait_for_timeout(3000)
-    # ── ログイン（すでにログイン済みなら飛ばす）
-    if not page.query_selector('text=売上管理'):
-        for label in ['ログイン', 'ログイン / 新規登録', 'Log in', 'サインイン']:
-            if click_text(page, label):
-                page.wait_for_timeout(2500)
-                break
-        mail = page.query_selector('input[type=email]') or page.query_selector('input[name*=mail i]')
+    page.goto(BASE + '/dashboard/income', wait_until='networkidle', timeout=60000)
+    if '/signin' in page.url or page.query_selector('input[type=password]'):
+        mail = page.query_selector('input[type=email]') or page.query_selector('input[name=email]')
         pw = page.query_selector('input[type=password]')
         if not (mail and pw):
             page.screenshot(path=os.path.join(outdir, 'login_error.png'), full_page=True)
@@ -98,47 +38,81 @@ def login(page, outdir='.'):
         mail.fill(email)
         pw.fill(password)
         pw.press('Enter')
-        page.wait_for_timeout(6000)
-        if not page.query_selector('text=売上管理'):
-            for label in ['ログイン', 'Log in', '送信']:
-                if click_text(page, label):
-                    break
-            page.wait_for_timeout(6000)
-    if not page.query_selector('text=売上管理'):
+        try:
+            page.wait_for_url('**/dashboard**', timeout=60000)
+        except Exception:
+            pass
+        page.wait_for_timeout(2000)
+    if '/signin' in page.url or not page.query_selector('text=売上管理'):
         page.screenshot(path=os.path.join(outdir, 'login_error.png'), full_page=True)
         sys.exit('ログインできませんでした（login_error.png を確認）')
 
 
-def open_month(page, year, mon):
-    """売上管理を開いて年月を選ぶ。mon は '08' でも '8' でもよい"""
-    # ── 売上管理へ
-    # 年月の選択欄が描画されるまで待つ（固定5秒では間に合わない夜があった 2026-09-26）。
-    # 出なければ1回だけ読み直す
-    sels = []
-    tries = 3
+def loader_data(page, url, key, tries=3):
+    """ページを開いて、裏に入っているデータ（loaderData[key]）を取り出す"""
     for attempt in range(tries):
-        page.goto(BASE + '/reports_income', wait_until='networkidle', timeout=60000)
+        page.goto(BASE + url, wait_until='networkidle', timeout=60000)
         try:
-            page.wait_for_selector('select', timeout=40000)
+            page.wait_for_function(
+                "k => window.__reactRouterContext && window.__reactRouterContext.state"
+                " && window.__reactRouterContext.state.loaderData"
+                " && window.__reactRouterContext.state.loaderData[k]",
+                arg=key, timeout=40000)
+            return page.evaluate("k => window.__reactRouterContext.state.loaderData[k]", key)
         except Exception:
-            pass
-        page.wait_for_timeout(3000)
-        sels = page.query_selector_all('select')
-        if len(sels) >= 2:
-            break
-        if attempt < tries - 1:
-            # 40秒待っても出ない夜は、続けて読み直しても出ないことが多い。
-            # 少し間を置いてから読み直す（2026-10-16 3:48の失敗を受けて2回→3回＋間に10秒）
-            print(f'年月の選択欄がまだ出ていません（{attempt + 1}回目）。10秒おいて読み直します')
+            print(f'データがまだ出ていません（{attempt + 1}回目）。10秒おいて読み直します')
             page.wait_for_timeout(10000)
+    sys.exit(f'{url} のデータが読めませんでした')
+
+
+def fetch_month(page, year, mon):
+    """その月の売上を、旧CSVと同じ列の辞書の一覧で返す。mon は '08' でも '8' でもよい"""
+    ym = f'{int(year):04d}-{int(mon):02d}'
+    data = loader_data(page, f'/dashboard/income?period=month&date={ym}', 'routes/dashboard/income')
+    sel = data.get('selectedPeriod') or {}
+    if not str(sel.get('startDate', '')).startswith(ym):
+        sys.exit(f'{ym} を開いたつもりが {sel.get("label")} が出ています')
+    rows, other, prorated = [], 0, 0
+    for r in data.get('records', []):
+        d = str(r.get('date', ''))
+        if not d.startswith(ym):
+            other += 1
+            continue
+        lines = r.get('lineItems') or []
+        # 明細ごとの金額：コース消化は0円。それ以外は会計の金額を明細に割り付ける。
+        # 明細が1つなら会計の金額そのもの（unitPrice は定価のままのことがある）。
+        # 明細が複数で unitPrice×数量 の合計が会計の金額と違うときだけ按分する（端数は最後の行）
+        sold = [l for l in lines if not l.get('isCourseRedemption')]
+        total = sum(int(l.get('unitPrice') or 0) * int(l.get('quantity') or 1) for l in sold)
+        amount = int(r.get('amount') or 0)
+        amt_of = {}
+        if len(sold) == 1:
+            amt_of[id(sold[0])] = amount
+        elif total == amount or not sold:
+            for l in sold:
+                amt_of[id(l)] = int(l.get('unitPrice') or 0) * int(l.get('quantity') or 1)
         else:
-            print(f'年月の選択欄がまだ出ていません（{attempt + 1}回目）')
-    if len(sels) < 2:
-        sys.exit('年月の選択欄が見つかりませんでした')
-    sels[0].select_option(label=str(year))
-    page.wait_for_timeout(1500)
-    sels[1].select_option(label=str(int(mon)))
-    page.wait_for_timeout(4000)
+            prorated += 1
+            acc = 0
+            for i, l in enumerate(sold):
+                v = int(l.get('unitPrice') or 0) * int(l.get('quantity') or 1)
+                a = amount - acc if i == len(sold) - 1 else (math.floor(amount * v / total) if total else 0)
+                amt_of[id(l)] = a
+                acc += a
+        for l in lines:
+            tab = KIND_TAB.get(l.get('kind'), '物販')
+            shouka = bool(l.get('isCourseRedemption'))
+            rows.append({'区分': tab, '日付': d.replace('-', '/'), '名称': str(l.get('name') or '').strip(),
+                         '数量': str(int(l.get('quantity') or 1)), '顧客': str(r.get('customer') or '').strip(),
+                         '金額': '0' if shouka else str(amt_of.get(id(l), 0)),
+                         'スタッフ': str(r.get('staff') or '').strip(),
+                         '状態': '消化' if shouka else ('契約' if tab == 'コース' else ''),
+                         'メモ': str(l.get('memo') or '').strip()})
+    if other:
+        print(f'    （{ym}以外の{other}件は除きました）')
+    if prorated:
+        print(f'    ⚠️ 明細が複数で金額が合わない会計 {prorated}件は会計の金額を按分しました')
+    return rows, data
 
 
 def main():
@@ -150,22 +124,13 @@ def main():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        # 縦に大きい画面にすると一覧が一度にたくさん描画される
-        ctx = browser.new_context(viewport={'width': 1400, 'height': 6000}, locale='ja-JP')
+        ctx = browser.new_context(viewport={'width': 1400, 'height': 2000}, locale='ja-JP')
         page = ctx.new_page()
         try:
             login(page, OUTDIR)
-            open_month(page, YEAR, MON)
-
-            all_rows = []
+            all_rows, _ = fetch_month(page, YEAR, MON)
             for tab in ['物販', 'サービス', 'コース']:
-                click_text(page, tab)
-                page.wait_for_timeout(3000)
-                n = load_all(page, tab)
-                got = parse_rows(page, tab)
-                print(f'  {tab}: {len(got)}件（描画 {n}）')
-                all_rows += got
-
+                print(f'  {tab}: {sum(1 for r in all_rows if r["区分"] == tab)}件')
             os.makedirs(OUTDIR, exist_ok=True)
             out = os.path.join(OUTDIR, f'urakata_{MONTH}.csv')
             with open(out, 'w', encoding='utf-8-sig', newline='') as f:

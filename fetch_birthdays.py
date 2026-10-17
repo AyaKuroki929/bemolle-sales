@@ -48,54 +48,34 @@ def months_back(target, n):
 
 
 def read_month(page, y, m):
-    """その月の売上（物販・サービス・コース）を (区分, 日付, 名称, 顧客) で返す"""
-    fu.open_month(page, y, m)
-    ym = f'{y}/{m:02d}/'
-    rows = []
-    for tab in ['物販', 'サービス', 'コース']:
-        fu.click_text(page, tab)
-        page.wait_for_timeout(3000)
-        fu.load_all(page, tab)
-        for el in fu.rg(page, tab).query_selector_all(':scope > *'):
-            t = re.sub(r'\s', '', el.text_content() or '')
-            mm = fu.ROW_RE.match(t)
-            if mm and mm.group(2).startswith(ym):
-                rows.append((tab, mm.group(2), mm.group(1), mm.group(4)))
-    return rows
+    """その月の売上（物販・サービス・コース）を (区分, 日付, 名称, 顧客) で返す
+    2026-10-18 新システム向け：fetch_urakata.fetch_month が画面の裏のデータを読む"""
+    rows, _ = fu.fetch_month(page, y, m)
+    return [(r['区分'], r['日付'], r['名称'], r['顧客']) for r in rows]
 
 
 def read_customers(page):
-    """顧客管理の全員を {名前, 誕生日, メモ} で返す"""
-    page.goto(fu.BASE + '/interactions_costumer', wait_until='networkidle', timeout=60000)
-    page.wait_for_timeout(4000)
-    fu.click_text(page, '全てのお客様')
-    page.wait_for_timeout(4000)
-    page.mouse.move(700, 1500)
-    last, stable = -1, 0
-    for _ in range(400):                         # 本物のホイール操作でしか続きが読み込まれない
-        page.mouse.wheel(0, 20000)
-        page.wait_for_timeout(900)
-        g = page.query_selector('[class*="RepeatingGroup"]')
-        n = len(g.query_selector_all(':scope > *')) if g else 0
-        if n == last:
-            stable += 1
-            if stable >= 6:
-                break
-        else:
-            stable, last = 0, n
-    g = page.query_selector('[class*="RepeatingGroup"]')
-    if not g:
+    """顧客管理の全員を {名前, 誕生日, メモ} で返す
+    2026-10-18 新システム向け：/dashboard/customers は20人ずつのページ送り。pagination.pages ぶん回す"""
+    out, seen = [], set()
+    page_no, pages = 1, 1
+    while page_no <= pages:
+        data = fu.loader_data(page, f'/dashboard/customers?page={page_no}', 'routes/dashboard/customers')
+        pg = data.get('pagination') or {}
+        pages = int(pg.get('pages') or 1)
+        for c in data.get('customers') or []:
+            cid = c.get('id') or c.get('name')
+            if cid in seen:
+                continue
+            seen.add(cid)
+            bd = str(c.get('birthday') or '')
+            m = re.fullmatch(r'(\d{4})-(\d{2})-(\d{2})', bd)
+            out.append({'名前': str(c.get('name') or '').strip(),
+                        '誕生日': m.groups() if m else None,
+                        'メモ': str(c.get('memo') or '')})
+        page_no += 1
+    if not out:
         sys.exit('顧客一覧が見つかりませんでした')
-    out = []
-    for el in g.query_selector_all(':scope > *'):
-        t = re.sub(r'\s', '', el.text_content() or '')
-        nm = re.match(r'^(.+?)様', t)
-        if not nm:
-            continue
-        bd = re.search(r'誕生日：(\d{4})/(\d{2})/(\d{2})', t)
-        memo = re.search(r'メモ：(.*?)(?:編集|$)', t)
-        out.append({'名前': nm.group(1), '誕生日': bd.groups() if bd else None,
-                    'メモ': memo.group(1) if memo else ''})
     return out
 
 

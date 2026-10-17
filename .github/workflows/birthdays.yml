@@ -13,6 +13,10 @@ on:
       month:
         description: '作る月（例 2026-11）。空なら今月'
         required: false
+      dry:
+        description: 'true なら読むだけで書き込まない（新しい画面の動作確認用）'
+        required: false
+        default: 'false'
 
 concurrency:
   group: birthdays
@@ -65,11 +69,12 @@ jobs:
           [ -z "$M" ] && M=$(TZ=Asia/Tokyo date +%Y-%m)
           SKIP=""
           [ "${{ github.event_name }}" = "schedule" ] && SKIP="--skip-if-done"
+          [ "${{ github.event.inputs.dry }}" = "true" ] && SKIP="$SKIP --dry"
           python3 fetch_birthdays.py "$M" $SKIP 2>&1 | tee -a out.txt
 
       # 1時・4時の失敗は次の回がやり直すので知らせない。7時以降（9時に間に合わない恐れ）と手動実行だけ🚨
       - name: 7時の回でも作れなかったときLINEで知らせる
-        if: failure() && (github.event_name != 'schedule' || steps.hour.outputs.late == 'yes')
+        if: failure() && github.event.inputs.dry != 'true' && (github.event_name != 'schedule' || steps.hour.outputs.late == 'yes')
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

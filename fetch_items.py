@@ -8,16 +8,14 @@
 新しく増えた商品は税率10%で入れる（食品なら彩さんが設定タブで8%に直す）。
 うらかたさんから消えた商品はこちらでは消さない（過去の売上の税率を引くのに要るため）。
 
-⚠️ 一覧は少しずつしか描画されず、「ブランド順」と「アラート順」で中身が違う。
-   両方を見て、見えたものをためていく。
+2026-10-18 新システムに切り替わったので、売上管理ページの裏にある商品データを読む形に作り直した
+（旧システムの「アラート順／ブランド順を両方スクロールしてためる」は不要になった）。
 """
 import os, re, sys, json, unicodedata, urllib.request, urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN = os.path.expanduser('~/.google_drive_token.json')
 BASE = 'https://urakatasan.jp'
-
-ROW_RE = re.compile(r'^(.*?)\s*ブランド：(.*?)\s*単価：([\d,]+)\s*円?\s*メモ：(.*?)在庫数：(-?[\d,]+)')
 
 # 仕入値の掛け率（2026-09-19 彩さん）。H.R.は5掛け、それ以外は6掛け。
 # すでに仕入値が入っている行は触らない（棚卸しの実額が入っていることがあるため）
@@ -44,46 +42,11 @@ def api(url, at, method='GET', body=None):
     return json.load(urllib.request.urlopen(req))
 
 
-def click_text(page, label):
-    for el in page.query_selector_all('div,span,button,a'):
-        try:
-            if (el.text_content() or '').strip() == label and el.is_visible():
-                el.click()
-                return True
-        except Exception:
-            continue
-    return False
-
-
-def harvest(page, found):
-    """いま描画されている行を全部ためる（一覧が複数あるので全部見る）"""
-    for g in page.query_selector_all('[class*="RepeatingGroup"]'):
-        for el in g.query_selector_all(':scope > *'):
-            t = re.sub(r'\s+', ' ', el.text_content() or '').strip()
-            m = ROW_RE.match(t)
-            if m:
-                found[keyname(m.group(1))] = (m.group(1).strip(), m.group(2).strip(),
-                                              int(m.group(3).replace(',', '')),
-                                              int(m.group(5).replace(',', '')))
-    return len(found)
-
-
-def scroll_and_harvest(page, found, rounds=24):
-    last, same = -1, 0
-    for _ in range(rounds):
-        page.mouse.wheel(0, 1200)
-        page.wait_for_timeout(700)
-        n = harvest(page, found)
-        if n == last:
-            same += 1
-            if same >= 6:
-                break
-        else:
-            same, last = 0, n
-    return len(found)
-
-
 def scrape():
+    """うらかたさんの商品一覧を {照合キー: (商品名, ブランド, 税抜単価, 在庫数)} で返す。
+    2026-10-18 新システム向けに作り直し。売上管理ページの裏に全商品（物販・受注発注・都度払い・コース）が
+    入っているので、そこから物販と受注発注商品だけを取る（旧システムの一覧も在庫のある商品だけだった）"""
+    import fetch_urakata as fu
     from playwright.sync_api import sync_playwright
     email = os.environ.get('URAKATA_EMAIL', '')
     password = os.environ.get('URAKATA_PASSWORD', '')
@@ -92,53 +55,22 @@ def scrape():
     found = {}
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context(viewport={'width': 1400, 'height': 3000}, locale='ja-JP')
+        ctx = browser.new_context(viewport={'width': 1400, 'height': 2000}, locale='ja-JP')
         page = ctx.new_page()
         try:
-            page.goto(BASE, wait_until='networkidle', timeout=60000)
-            page.wait_for_timeout(3000)
-
-            # ── ログイン（売上を取る方と同じ手順。すでにログイン済みなら飛ばす）
-            if not page.query_selector('text=売上管理'):
-                for label in ['ログイン', 'ログイン / 新規登録', 'Log in', 'サインイン']:
-                    if click_text(page, label):
-                        page.wait_for_timeout(2500)
-                        break
-                mail = page.query_selector('input[type=email]') or page.query_selector('input[name*=mail i]')
-                pw = page.query_selector('input[type=password]')
-                if not (mail and pw):
-                    page.screenshot(path='out/items_login_error.png', full_page=True)
-                    sys.exit('ログイン欄が見つかりませんでした')
-                mail.fill(email)
-                pw.fill(password)
-                pw.press('Enter')
-                page.wait_for_timeout(6000)
-                if not page.query_selector('text=売上管理'):
-                    for label in ['ログイン', 'Log in', '送信']:
-                        if click_text(page, label):
-                            break
-                    page.wait_for_timeout(6000)
-            if not page.query_selector('text=売上管理'):
-                page.screenshot(path='out/items_login_error.png', full_page=True)
-                sys.exit('ログインできませんでした')
-
-            page.goto(BASE + '/notifications_item', wait_until='networkidle', timeout=60000)
-            page.wait_for_timeout(6000)
-            harvest(page, found)
-            print(f'  はじめに見えた分: {len(found)}件')
-            scroll_and_harvest(page, found)
-            print(f'  アラート順でためた分: {len(found)}件')
-
-            # 「ブランド順」に切り替えると別の一覧が出てきて、こちらの方が多い
-            if click_text(page, 'ブランド順'):
-                page.wait_for_timeout(6000)
-                page.mouse.wheel(0, -50000)
-                page.wait_for_timeout(1500)
-                harvest(page, found)
-                scroll_and_harvest(page, found, rounds=40)
-                print(f'  ブランド順まで見てためた分: {len(found)}件')
-            else:
-                print('  ⚠️ ブランド順のボタンが見つかりませんでした')
+            fu.login(page, 'out')
+            data = fu.loader_data(page, '/dashboard/income', 'routes/dashboard/income')
+            kinds = {}
+            for it in data.get('items') or []:
+                kinds[it.get('kind')] = kinds.get(it.get('kind'), 0) + 1
+                if it.get('kind') not in ('product', 'ordered_product'):
+                    continue
+                name = str(it.get('name') or '').strip()
+                if not name:
+                    continue
+                found[keyname(name)] = (name, str(it.get('brand_name') or '').strip(),
+                                        int(it.get('unit_price') or 0), int(it.get('stock') or 0))
+            print(f'  うらかたさんの商品: {kinds} → 物販・受注発注 {len(found)}件')
         finally:
             browser.close()
     return found

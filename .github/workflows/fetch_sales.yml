@@ -8,6 +8,10 @@ on:
       month:
         description: '取り込む月（例 2026-08）。空なら今月と先月の両方'
         required: false
+      dry:
+        description: 'true なら読むだけで書き込まない（新しい画面の動作確認用）'
+        required: false
+        default: 'false'
 
 jobs:
   fetch:
@@ -41,6 +45,12 @@ jobs:
           fi
           echo "months=$MONTHS" >> $GITHUB_OUTPUT
           echo "取り込む月: $MONTHS"
+          if [ "${{ github.event.inputs.dry }}" = "true" ]; then
+            echo "dry=--dry" >> $GITHUB_OUTPUT
+            echo "⚠️ 読むだけで書き込みません（dry）"
+          else
+            echo "dry=" >> $GITHUB_OUTPUT
+          fi
 
       # 商品マスタ（商品名・ブランド・単価・在庫数）を先にそろえる。
       # 税率と仕入値はうらかたさんに無いので、すでに入っている行のものは触らない
@@ -52,7 +62,7 @@ jobs:
           SHEET_ID: ${{ secrets.SHEET_ID }}
         run: |
           set -o pipefail
-          python3 fetch_items.py 2>&1 | tee -a out.txt
+          python3 fetch_items.py ${{ steps.m.outputs.dry }} 2>&1 | tee -a out.txt
 
       - name: うらかたさんから取ってきてスプレッドシートに入れる
         env:
@@ -65,7 +75,7 @@ jobs:
           for M in ${{ steps.m.outputs.months }}; do
             echo "───────── $M ─────────" | tee -a out.txt
             python3 fetch_urakata.py "$M" out 2>&1 | tee -a out.txt
-            python3 import_sales.py "out/urakata_$M.csv" 2>&1 | tee -a out.txt
+            python3 import_sales.py "out/urakata_$M.csv" ${{ steps.m.outputs.dry }} 2>&1 | tee -a out.txt
           done
 
       # ⚠️ このリポジトリは公開（GitHub Pages を使うため）。
@@ -81,7 +91,7 @@ jobs:
           PY
 
       - name: 失敗・要確認のときLINEで知らせる
-        if: failure()
+        if: failure() && github.event.inputs.dry != 'true'
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
