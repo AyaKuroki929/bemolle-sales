@@ -14,10 +14,13 @@ GitHub Actions（PCを開かなくても動く）でもローカルでも使え�
   ・1明細の金額は「会計の金額」を正とする（旧システムの売上額と一致することを 2026-09 の
     4件で確認。明細の unitPrice は定価のままのことがある）
 """
-import os, sys, csv, time, math
+import os, sys, csv, time, math, re
 
-MONTH = sys.argv[1] if len(sys.argv) > 1 else time.strftime('%Y-%m')
-OUTDIR = sys.argv[2] if len(sys.argv) > 2 else '.'
+# 他のスクリプト（fetch_items.py など）から import されたときは、そちらの引数（--dry 等）が
+# 混ざるので、YYYY-MM の形のものだけを月として受け取る
+_ARGS = [a for a in sys.argv[1:] if not a.startswith('--')]
+MONTH = _ARGS[0] if _ARGS and re.fullmatch(r'\d{4}-\d{2}', _ARGS[0]) else time.strftime('%Y-%m')
+OUTDIR = _ARGS[1] if len(_ARGS) > 1 else '.'
 YEAR, MON = MONTH.split('-')
 BASE = 'https://urakatasan.jp'
 
