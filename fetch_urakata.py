@@ -27,28 +27,41 @@ BASE = 'https://urakatasan.jp'
 KIND_TAB = {'product': '物販', 'ordered_product': '物販', 'service': 'サービス', 'course': 'コース'}
 
 
-def login(page, outdir='.'):
-    """うらかたさんにログインする（すでにログイン済みなら何もしない）"""
+def login(page, outdir='.', tries=2):
+    """うらかたさんにログインする（すでにログイン済みなら何もしない）
+
+    2026-10-24 「売上管理」の文字が出る前に判定して落ちた（画面を開いて5秒で失敗。直前の
+    商品マスタ取り込みでは同じログイン情報で成功）ので、文字が出るまで最大20秒待ち、
+    それでも出なければログインをもう1回やり直す形にした
+    """
     email = os.environ.get('URAKATA_EMAIL', '')
     password = os.environ.get('URAKATA_PASSWORD', '')
-    page.goto(BASE + '/dashboard/income', wait_until='networkidle', timeout=60000)
-    if '/signin' in page.url or page.query_selector('input[type=password]'):
-        mail = page.query_selector('input[type=email]') or page.query_selector('input[name=email]')
-        pw = page.query_selector('input[type=password]')
-        if not (mail and pw):
-            page.screenshot(path=os.path.join(outdir, 'login_error.png'), full_page=True)
-            sys.exit('ログイン欄が見つかりませんでした（login_error.png を確認）')
-        mail.fill(email)
-        pw.fill(password)
-        pw.press('Enter')
+    for attempt in range(tries):
+        page.goto(BASE + '/dashboard/income', wait_until='networkidle', timeout=60000)
+        if '/signin' in page.url or page.query_selector('input[type=password]'):
+            mail = page.query_selector('input[type=email]') or page.query_selector('input[name=email]')
+            pw = page.query_selector('input[type=password]')
+            if not (mail and pw):
+                page.screenshot(path=os.path.join(outdir, 'login_error.png'), full_page=True)
+                sys.exit('ログイン欄が見つかりませんでした（login_error.png を確認）')
+            mail.fill(email)
+            pw.fill(password)
+            pw.press('Enter')
+            try:
+                page.wait_for_url('**/dashboard**', timeout=60000)
+            except Exception:
+                pass
+            page.wait_for_timeout(2000)
         try:
-            page.wait_for_url('**/dashboard**', timeout=60000)
+            page.wait_for_selector('text=売上管理', timeout=20000)
+            if '/signin' not in page.url:
+                return
         except Exception:
             pass
-        page.wait_for_timeout(2000)
-    if '/signin' in page.url or not page.query_selector('text=売上管理'):
-        page.screenshot(path=os.path.join(outdir, 'login_error.png'), full_page=True)
-        sys.exit('ログインできませんでした（login_error.png を確認）')
+        print(f'ログイン後の画面が出ません（{attempt + 1}回目・URL: {page.url}）。10秒おいてやり直します')
+        page.wait_for_timeout(10000)
+    page.screenshot(path=os.path.join(outdir, 'login_error.png'), full_page=True)
+    sys.exit('ログインできませんでした（login_error.png を確認）')
 
 
 def loader_data(page, url, key, tries=3):
