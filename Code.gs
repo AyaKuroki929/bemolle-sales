@@ -49,7 +49,7 @@ function contractRate_(indexFromOne) {
 const NO_COUNT_CONTRACTS = ['ラジショット', '部位チケット'];
 
 // 支払方法（2026-09-20 彩さん）。HPBポイントは「分けて払う」の中だけに出す
-const PAY_METHODS = ['現金', 'JMS', 'Square', '振込', 'ローン', 'HPBポイント'];
+const PAY_METHODS = ['現金', 'JMS', 'Square', 'Air Pay', '振込', 'ローン', 'HPBポイント'];
 const QUICK_HIDE  = ['HPBポイント'];   // ボタンには出さないもの
 const STOCK_USES  = ['サロン使用', '黒木購入'];
 // 日当5,000円がつかない日の理由
