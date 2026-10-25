@@ -89,7 +89,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <h1>ベモーレ 売上日報</h1>
   <nav>
     <button data-t="pay" class="on">支払入力</button>
-    <button data-t="stock">在庫払出</button>
     <button data-t="unpaid">未収</button>
     <button data-t="bday">誕生日</button>
     <button data-t="allow">日当</button>
@@ -115,33 +114,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   </div>
   <div id="payList"></div>
 </section>
-<!-- ══ 在庫払出 ══ -->
-<section id="stock">
-  <div class="card">
-    <h2>売上でない持ち出しを記録</h2>
-    <div class="row">
-      <div><label>日付</label><input type="date" id="k_date"></div>
-      <div><label>用途</label><select id="k_use"></select></div>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <div><label>ブランドで絞る</label><select id="k_brand"></select></div>
-      <div style="flex:0 0 80px"><label>数量</label><input type="number" id="k_qty" value="1" min="1"></div>
-    </div>
-    <div style="margin-top:8px"><label>商品</label>
-      <input id="k_name" placeholder="商品名（打ち込むと候補がしぼられます）" autocomplete="off"></div>
-    <div class="mini" id="k_hint" style="margin-top:4px"></div>
-    <div id="k_sugg" style="margin-top:6px;max-height:220px;overflow-y:auto"></div>
-    <button class="btn sub wide" id="btnAddLine" style="margin-top:8px">＋この商品を足す</button>
-    <div id="k_list" style="margin-top:10px"></div>
-    <div style="margin-top:8px"><label>メモ（まとめて付きます）</label><input id="k_memo" placeholder="任意"></div>
-    <button class="btn wide" id="btnSaveStock" style="margin-top:10px">まとめて記録する</button>
-  </div>
-  <div class="card">
-    <h2>今月の払出<button class="btn ghost sm" id="btnReloadStock">更新</button></h2>
-    <div id="stockList"></div>
-  </div>
-</section>
-
 <!-- ══ 未収 ══ -->
 <section id="unpaid">
   <div class="card">
@@ -235,7 +207,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const BUILD = '20261024153052';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
+const BUILD = '20261025211038';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
 // GitHub Pages は10分間ブラウザに古い版を使わせるので、新しい版が出ていたら自分で読み直す（2026-10-02 彩さん「なってない」）
 async function checkBuild(){
   try{
@@ -255,7 +227,6 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbw5r9qSAxC613fnqJOdlRsj
 let M = { products: [], menus: [], staff: [] };
 let PAY_METHODS = ['現金','JMS','Square','Air Pay','振込','ローン','HPBポイント'];
 const QUICK_HIDE = ['HPBポイント'];   // ボタンには出さず「分けて払う」の中だけに出す
-let STOCK_USES = ['サロン使用','黒木購入'];
 let editing = null;   // 編集中の会計ID
 let createdAt = '';
 const $ = s => document.querySelector(s);
@@ -335,130 +306,11 @@ $$('nav button').forEach(b => b.onclick = () => {
   $$('nav button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
   $$('section').forEach(s=>s.classList.remove('on')); $('#'+b.dataset.t).classList.add('on');
   if(b.dataset.t==='allow') loadAllowances();
-  if(b.dataset.t==='stock') loadStocks();
   if(b.dataset.t==='unpaid') loadUnpaid();
   if(b.dataset.t==='bday') loadBirthdays();
   if(b.dataset.t==='take') loadStocktake();
   if(b.dataset.t==='conf') renderMasters();
 });
-
-// ─── 在庫払出 ───
-// ブランドで候補を絞る。絞っても打ち込みは自由（登録していない商品も記録できる）
-// iPadのSafariは予測候補（datalist）が出ないので、自前でタップできる一覧を出す
-function fillProdList(){
-  const b = $('#k_brand') ? $('#k_brand').value : '';
-  const q = ($('#k_name').value || '').trim().toLowerCase();
-  const base = (M.products||[]).filter(p => !b || p.brand === b);
-  const list = q ? base.filter(p => (p.name+' '+(p.brand||'')).toLowerCase().includes(q)) : base;
-  $('#k_sugg').innerHTML = list.slice(0,40).map(p=>
-    `<div class="line" style="padding:8px 10px;margin-bottom:4px;cursor:pointer"
-       onclick="pickProd('${esc(p.name).replace(/'/g,"\\'")}')">
-       <span class="mini">${esc(p.brand||'')}</span> ${esc(p.name)}</div>`).join('')
-    || '<div class="mini">候補にありません。そのまま打ち込めば記録できます</div>';
-  $('#k_hint').textContent = `${b ? esc(b)+' の' : '登録済み'} ${list.length}件`
-    + (list.length>40 ? '（上から40件を表示）' : '') + '（ここに無いものは打ち込みでOK）';
-}
-function pickProd(name){ $('#k_name').value = name; fillProdList(); $('#k_qty').focus(); }
-
-// 同じ用途で何個も出すことがあるので、いったん溜めてからまとめて記録する
-let KLINES = [];
-function renderKLines(){
-  const btn = $('#btnSaveStock');
-  if(!KLINES.length){
-    $('#k_list').innerHTML = '<div class="mini">まだ足していません。商品を選んで「＋この商品を足す」を押してください</div>';
-    btn.textContent = 'この1件を記録する';
-    return;
-  }
-  $('#k_list').innerHTML = '<table><tr><th>商品</th><th class="n">数</th><th></th></tr>'
-    + KLINES.map((l,i)=>`<tr><td>${esc(l.name)}</td><td class="n">${l.qty}</td>
-      <td><button class="del" onclick="delKLine(${i})">外す</button></td></tr>`).join('') + '</table>';
-  btn.textContent = `まとめて記録する（${KLINES.length}件）`;
-}
-function delKLine(i){ KLINES.splice(i,1); renderKLines(); }
-$('#btnAddLine').onclick = () => {
-  const name = $('#k_name').value.trim();
-  if(!name) return toast('商品を入れてください');
-  KLINES.push({ name, qty: Number($('#k_qty').value)||1 });
-  // 足したら商品の選択を空に戻し、選んでいるブランドの一覧に戻す（2026-09-22 彩さん）。
-  // 入力欄にフォーカスを戻すとiPadでキーボードが一覧を隠すので戻さない
-  $('#k_name').value=''; $('#k_qty').value=1; fillProdList();
-  renderKLines();
-};
-$('#btnSaveStock').onclick = async () => {
-  const date=$('#k_date').value, use=$('#k_use').value, memo=$('#k_memo').value.trim();
-  let lines = KLINES.slice();
-  if(!lines.length){                                  // 足していなければ入力欄の1件だけ
-    const name=$('#k_name').value.trim();
-    if(!name) return toast('商品を入れてください');
-    lines = [{ name, qty: Number($('#k_qty').value)||1 }];
-  }
-  const btn=$('#btnSaveStock');
-  const was=btn.textContent;
-  btn.disabled=true;
-  btn.innerHTML = `<span class="spin"></span> 記録しています…（${lines.length}件）`;
-  try{
-    await api('saveStocks', { date, use, memo, lines });
-    toast(lines.length+'件を記録しました');
-    KLINES=[]; $('#k_name').value=''; $('#k_qty').value=1; $('#k_memo').value='';
-  }catch(e){
-    // 返事が返ってこないだけのことがあるので、入っていないか見に行く
-    btn.innerHTML = `<span class="spin"></span> 記録できたか確認しています…`;
-    let saved=false;
-    try{
-      const rows = await api('getStocks', {}, { date });
-      saved = lines.every(l => rows.some(r => r.name===l.name && r.use===use));
-    }catch(e2){}
-    if(saved){ toast('記録できていました'); KLINES=[]; $('#k_name').value=''; $('#k_qty').value=1; $('#k_memo').value=''; }
-    else { toast('記録できませんでした：'+e.message, 4000); }
-  }finally{
-    btn.disabled=false; btn.textContent=was;
-    renderKLines(); loadStocks();
-  }
-};
-$('#k_brand').onchange = () => { $('#k_name').value=''; fillProdList(); };
-$('#k_name').oninput = fillProdList;
-renderKLines();
-$('#btnReloadStock').onclick = () => busy($('#btnReloadStock'), '…', loadStocks);
-async function loadStocks(){
-  const month = ($('#k_date').value || new Date().toISOString().slice(0,10)).slice(0,7);
-  try{
-    const rows = await api('getStocks', {}, { month });
-    if(!rows.length){ $('#stockList').innerHTML = '<div class="mini">まだありません</div>'; return; }
-    STOCKS = rows;
-    $('#stockList').innerHTML = `<table><tr><th>日付</th><th>商品</th><th class="n">数</th><th>用途</th><th>メモ</th><th></th></tr>`
-      + rows.map((r,i) => `<tr id="stk_${i}"><td>${esc(r.date.slice(5))}</td><td>${esc(r.name)}</td><td class="n">${r.qty}</td>
-        <td>${esc(r.use)}</td><td class="mini">${esc(r.memo||'')}</td>
-        <td style="white-space:nowrap"><button class="del" style="color:var(--rose-d)" onclick="editStock(${i})">編集</button>
-        <button class="del" onclick="removeStock('${r.id}')">削除</button></td></tr>`).join('') + '</table>';
-  }catch(e){ $('#stockList').innerHTML = `<div class="ng">${esc(e.message)}</div>`; }
-}
-let STOCKS = [];
-// 一覧の1行をその場で入力欄に変えて直す（日付・数・用途・メモ。商品名は変えない＝別の商品なら削除して入れ直す）
-function editStock(i){
-  const r = STOCKS[i]; const tr = $('#stk_'+i); if(!r || !tr) return;
-  const uses = [...$('#k_use').options].map(o=>`<option ${o.value===r.use?'selected':''}>${esc(o.value)}</option>`).join('');
-  tr.innerHTML = `<td><input type="date" id="e_date" value="${r.date}" style="width:150px"></td>
-    <td>${esc(r.name)}</td>
-    <td class="n"><input type="number" id="e_qty" value="${r.qty}" min="1" style="width:60px"></td>
-    <td><select id="e_use">${uses}</select></td>
-    <td><input id="e_memo" value="${esc(r.memo||'')}" style="width:120px"></td>
-    <td style="white-space:nowrap"><button class="btn sm" id="e_save">保存</button>
-    <button class="del" onclick="loadStocks()">やめる</button></td>`;
-  $('#e_save').onclick = () => busy($('#e_save'), '…', async () => {
-    const date=$('#e_date').value, qty=Number($('#e_qty').value)||0, use=$('#e_use').value, memo=$('#e_memo').value.trim();
-    try{
-      await api('updateStock', { id:r.id, date, qty, use, memo });
-      toast('直しました');
-      if(date.slice(0,7) !== ($('#k_date').value||'').slice(0,7)) $('#k_date').value = date;   // 月をまたいだら移った先の月を表示
-      loadStocks();
-    }catch(e){ toast(e.message); }
-  });
-}
-async function removeStock(id){
-  if(!confirm('この払出の記録を削除しますか？')) return;
-  try{ await api('deleteStock', { id }); toast('削除しました'); loadStocks(); }
-  catch(e){ toast(e.message); }
-}
 
 // ─── 未収 ───
 $('#btnReloadUnpaid').onclick = () => busy($('#btnReloadUnpaid'), '…', loadUnpaid);
@@ -952,18 +804,13 @@ async function boot(silent){
   if(!getPin()) await askPin();
   try{
     const d = await api('getStartupData');
-    M = d.masters; PAY_METHODS = d.payMethods; STOCK_USES = d.stockUses;
+    M = d.masters; PAY_METHODS = d.payMethods;
     const opt = n => `<option>${esc(n)}</option>`;
-    $('#k_use').innerHTML = STOCK_USES.map(opt).join('');
     $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
-    const brands = [...new Set(M.products.map(p=>p.brand).filter(Boolean))].sort();
-    $('#k_brand').innerHTML = '<option value="">すべて</option>' + brands.map(opt).join('');
-    fillProdList();
     if(!silent){
       // URLに ?month=2026-08 が付いていればその月で開く（付いていなければ今月）
       const q = new URLSearchParams(location.search).get('month');
       const m = /^\d{4}-\d{2}$/.test(q || '') ? q : d.month;
-      $('#k_date').value = d.today;
       fillMonths($('#p_month'), m); fillMonths($('#s_month'), m); fillMonths($('#a_month'), m); fillMonths($('#b_month'), m);
       $('#a_date').value = d.today;
     }
