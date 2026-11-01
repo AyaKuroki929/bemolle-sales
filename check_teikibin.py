@@ -5,7 +5,10 @@
 「サブスク個数把握」スプレッドシートのその月のタブ（B列=お客様 / 金額列はヘッダー「金額」で動的検出）を
 お客様ごとに突き合わせる。
 
-  python3 check_teikibin.py [2026-09] [--quiet]
+  python3 check_teikibin.py [2026-09] [--quiet] [--wait-if-empty]
+
+--wait-if-empty を付けると、うらかたさん側に1件も入っていないときは
+「スタッフの入力待ち」と見て何も言わない（終了コード0）。
 
 食い違いが1件でもあれば終了コード9。GitHub Actions 側でそれをLINE通知に使う。
 合っていれば何も言わない（無音）。
@@ -53,6 +56,8 @@ def person(s):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     month = args[0] if args else datetime.datetime.now().strftime('%Y-%m')
+    # --wait-if-empty：1件も突き合わせできなかったときは「まだ入力されていない」と見て黙る
+    wait_if_empty = '--wait-if-empty' in sys.argv[1:]
     at = access_token()
     ssid = os.environ.get('SHEET_ID') or open(os.path.join(HERE, 'sheet_id.txt')).read().strip()
 
@@ -95,7 +100,7 @@ def main():
         sys.exit(9)
 
     # ③ 突き合わせ（サブスク表は苗字だけのことがあるので、前方一致も見る）
-    used, diffs = set(), []
+    used, diffs, missing = set(), [], 0
     for name, amt in sorted(theirs.items()):
         hit = mine.get(name)
         key = name
@@ -109,6 +114,7 @@ def main():
         if hit is None:
             if amt:
                 diffs.append(f'{name}様：サブスク表 {amt:,}円 / うらかたさんに記録なし')
+                missing += 1
             continue
         used.add(key)
         if hit != amt:
@@ -120,6 +126,16 @@ def main():
     total_mine, total_theirs = sum(mine.values()), sum(theirs.values())
     print(f'{month} の定期便　うらかたさん {total_mine:,}円（{len(mine)}名）'
           f' / サブスク表 {total_theirs:,}円（{len(theirs)}名）')
+    # 1件も突き合わせできず、食い違いが全部「うらかたさんに記録なし」なら、
+    # 食い違いではなく「スタッフがまだ入力していない」。定期便は1日に上がるが、
+    # 1日が定休日だと入力は2日の日中になる（2026-11-02：1日が日曜で、0時台の照合では
+    # うらかたさん側が1件も無く🚨を誤発報した）。0時の回は黙って待ち、同じ日の20時の回で
+    # 改めて照合する。20時でもまだ無ければ本当におかしいので、そのときは知らせる。
+    if wait_if_empty and diffs and not used and missing == len(diffs):
+        print('うらかたさんにまだ1件も入っていません（スタッフの入力待ち）。'
+              'この回は知らせず、同じ日の20時の回で改めて照合します')
+        return
+
     if not diffs:
         print('✅ 全員一致')
         return

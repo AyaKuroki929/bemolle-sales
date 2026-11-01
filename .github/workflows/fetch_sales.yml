@@ -13,6 +13,11 @@ on:
         required: false
         default: 'false'
 
+# 同じスプレッドシートに書き込む定期便の答え合わせと同時に走らせない
+concurrency:
+  group: sales-import
+  cancel-in-progress: false
+
 jobs:
   fetch:
     runs-on: ubuntu-latest

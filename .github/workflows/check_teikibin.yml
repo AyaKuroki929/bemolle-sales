@@ -1,18 +1,30 @@
 name: 定期便の答え合わせ
 
+# 定期便は1日に上がるので2日に照合する。
+# 1日が定休日だとスタッフの入力が2日の日中になるため、0時の回で1件も入っていなければ
+# 黙って待ち、20時の回で改めて照合する（2026-11-02：1日が日曜で0時台に🚨を誤発報した）。
+# 照合の前に自分でうらかたさんから取り込む。売上取り込み（fetch_sales）の終わりを
+# 待たずに読んでしまう取りこぼしを無くすため。
+
 on:
   schedule:
-    - cron: '0 15 1 * *'      # 毎月2日 0:00 JST（定期便は1日に上がるので、翌日の0時に照合）
+    - cron: '0 15 1 * *'      # 2日 0:00 JST（入力がまだなら黙って待つ）
+    - cron: '0 11 2 * *'      # 2日 20:00 JST（入力待ちの受け皿・ここで無ければ知らせる）
   workflow_dispatch:
     inputs:
       month:
         description: '照合する月（例 2026-09）。空なら今月'
         required: false
 
+# 同じスプレッドシートに書き込む売上取り込みと同時に走らせない
+concurrency:
+  group: sales-import
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,6 +38,31 @@ jobs:
           if [ -z "$M" ]; then M=$(TZ=Asia/Tokyo date +%Y-%m); fi
           echo "month=$M" >> $GITHUB_OUTPUT
           echo "照合する月: $M"
+          # 0時の回だけ「入力待ちなら黙る」。20時の回と手動実行はそのまま知らせる
+          if [ "${{ github.event.schedule }}" = "0 15 1 * *" ]; then
+            echo "flag=--wait-if-empty" >> $GITHUB_OUTPUT
+            echo "入力がまだなら黙って20時の回に回します"
+          else
+            echo "flag=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Playwrightを入れる
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      # ⚠️ このリポジトリは公開。ログにお客様の名前・金額の明細を出さない
+      - name: 照合する月をうらかたさんから取り込み直す
+        env:
+          URAKATA_EMAIL: ${{ secrets.URAKATA_EMAIL }}
+          URAKATA_PASSWORD: ${{ secrets.URAKATA_PASSWORD }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: |
+          set -o pipefail
+          M="${{ steps.m.outputs.month }}"
+          python3 fetch_urakata.py "$M" out
+          python3 import_sales.py "out/urakata_$M.csv"
 
       - name: うらかたさんとサブスク個数把握を突き合わせる
         env:
@@ -33,11 +70,12 @@ jobs:
           SHEET_ID: ${{ secrets.SHEET_ID }}
         run: |
           set -o pipefail
-          python3 check_teikibin.py "${{ steps.m.outputs.month }}" 2>&1 | tee out.txt
+          python3 check_teikibin.py "${{ steps.m.outputs.month }}" ${{ steps.m.outputs.flag }} 2>&1 | tee out.txt
 
-      # 合っていれば無音。食い違ったときだけ知らせる
+      # 合っていれば無音。食い違ったときだけ知らせる。
+      # 手動実行は鳴らさない（仕組みを変えたあとの試し実行でLINEを消費しないため）
       - name: 食い違いをLINEで知らせる
-        if: failure()
+        if: failure() && github.event_name == 'schedule'
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
