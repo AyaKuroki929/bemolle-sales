@@ -66,7 +66,7 @@ def round5(tin, tout):
 
 # 置き場所はフォルダIDで固定（Googleドライブ ＞ Bemolle ＞ 報酬明細）。名前で探すと同名フォルダが複数ある時に違う方へ入る
 # （2026-10-13 iCloud→Googleドライブ引っ越しで「業務委託／報酬明細」も同名になった）
-PAYSLIP_FOLDER_ID = '1AyzOSTECvuGdufRKoMHvGBD8WBg5JpI'
+PAYSLIP_FOLDER_ID = '1AyzOSTECvuGdufRKoU8FdRFAQJCCMiRP'
 
 def upload_to_drive(path, folder_name='報酬明細'):
     """Google ドライブ ＞ Bemolle ＞ 報酬明細（PAYSLIP_FOLDER_ID）へ置く。同じ名前があれば差し替える"""
