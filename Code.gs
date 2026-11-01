@@ -47,6 +47,9 @@ function contractRate_(indexFromOne) {
 }
 // 件数に数えない契約の区分
 const NO_COUNT_CONTRACTS = ['ラジショット', '部位チケット'];
+// 体験メニューと同じ扱いのコース＝契約インセンティブを付けず件数にも数えない（来店ごとの施術分だけ）。
+// 取り込み（import_sales.py の TRIAL_LIKE_COURSES）でこの区分が付く。プラペン福袋（2026-11-02 彩さん）
+const TRIAL_LIKE_KUBUN = '体験扱い';
 
 // 支払方法（2026-09-20 彩さん）。HPBポイントは「分けて払う」の中だけに出す
 const PAY_METHODS = ['現金', 'JMS', 'Square', 'Air Pay', '振込', 'ローン', 'HPBポイント'];
@@ -874,6 +877,12 @@ function getIncentive(month) {
       const staff = r['担当者'] || '';
       if (targets.indexOf(staff) === -1) return;
       const netAmt = Number(r['税抜金額']) || 0;
+      if (r['区分'] === TRIAL_LIKE_KUBUN) {
+        // 黙って消さず、明細に0円で出す（なぜ付かないかが給料明細で分かるように）
+        ensure(staff).detail.push({ date: ymd_(r['日付']), customer: cust_(r), name: r['名称'],
+          label: r['名称'] + '（体験と同じ扱い・契約分なし）', amount: 0 });
+        return;
+      }
       const noCount = NO_COUNT_CONTRACTS.indexOf(r['区分']) !== -1;
       let rate, label;
       if (noCount) {

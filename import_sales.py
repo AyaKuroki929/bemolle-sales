@@ -63,10 +63,19 @@ def product(name):
 
 def kubun(name):
     if 'セルマン' in name: return 'セルマン'
-    if '下半身' in name or '上半身' in name: return '半身'
+    # 「半身福袋(2026年)」のように上半身/下半身と書かないメニューも半身にする（2026-11-02 彩さん）
+    if '半身' in name: return '半身'
     if '幹細胞' in name or 'プラペン' in name: return 'プラペン'
     if '全身' in name: return '全身'
     return '対象外'
+
+# プラペン福袋は体験メニューと同じ扱い＝買ったときの契約インセンティブは付けず、
+# 来店（消化）ごとの施術インセンティブだけにする（2026-11-02 彩さん）。
+# 全身福袋・半身福袋はコースと同じ扱いなので通常契約のまま
+TRIAL_LIKE_COURSES = ['プラペン福袋']
+
+def contract_kubun(name):
+    return '体験扱い' if any(k in name for k in TRIAL_LIKE_COURSES) else '通常契約'
 
 def load_unified(path):
     """fetch_urakata.py が書き出した1本のCSVを読む（区分＝物販/サービス/コース）"""
@@ -90,7 +99,7 @@ def load_unified(path):
             shouka = r.get('状態') == '消化'
             items.append({'日付': d, '顧客': r['顧客'], 'スタッフ': r['スタッフ'],
                           '種別': '施術' if shouka else '契約', '名称': name, '数量': 1,
-                          '区分': kubun(name) if shouka else '通常契約',
+                          '区分': kubun(name) if shouka else contract_kubun(name),
                           '税率': 10, '税抜': amt, '備考': r.get('メモ', '')})
     return items
 
