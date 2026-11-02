@@ -77,16 +77,36 @@ TRIAL_LIKE_COURSES = ['プラペン福袋']
 def contract_kubun(name):
     return '体験扱い' if any(k in name for k in TRIAL_LIKE_COURSES) else '通常契約'
 
+def first_sales_day(src):
+    """その月で最初に売上がある日（CSVは1か月分）。'2026/11/02' の形で返す"""
+    days = [str(r.get('日付') or '') for r in src if r.get('日付')]
+    return min(days) if days else ''
+
+
+def is_teiki(d, first_day, tanka, qty, amt):
+    """定期便＝月初の売上日 かつ 定価×数量の90%ちょうど。
+
+    課金はSquareが毎月1日に行うが、1日が定休日だとうらかたさんへの入力はその月の
+    最初の営業日になる（2026-11-01が日曜で、スタッフは11/02で入力）。
+    「1日ちょうど」を条件にしていたため11月分が全部物販になり、定期便の答え合わせが
+    0円で🚨を出した。1日に加えて「その月で最初に売上がある日」も同じに扱う。
+    """
+    return bool((d.endswith('/01') or (first_day and d == first_day))
+                and tanka and amt == round(tanka * qty * 0.9))
+
+
 def load_unified(path):
     """fetch_urakata.py が書き出した1本のCSVを読む（区分＝物販/サービス/コース）"""
     items = []
-    for r in csv.DictReader(open(path, encoding='utf-8-sig')):
+    src = list(csv.DictReader(open(path, encoding='utf-8-sig')))
+    first_day = first_sales_day(src)
+    for r in src:
         amt, qty = int(r['金額'] or 0), int(r['数量'] or 1)
         d, name, ku = r['日付'], r['名称'], r['区分']
         if ku == '物販':
             p = product(name)
             tanka, tax = p.get('単価'), p.get('税率', 10)
-            teiki = d.endswith('/01') and tanka and amt == round(tanka * qty * 0.9)
+            teiki = is_teiki(d, first_day, tanka, qty, amt)
             items.append({'日付': d, '顧客': r['顧客'], 'スタッフ': r['スタッフ'],
                           '種別': '定期便' if teiki else '物販', '名称': name, '数量': qty,
                           '区分': '定期便' if teiki else '物販', '税率': tax, '税抜': amt,
@@ -106,12 +126,13 @@ def load_unified(path):
 
 def load(bussan_csv, sc_csv):
     items = []
-    for r in csv.DictReader(open(bussan_csv, encoding='utf-8-sig')):
+    bussan = list(csv.DictReader(open(bussan_csv, encoding='utf-8-sig')))
+    first_day = first_sales_day(bussan)
+    for r in bussan:
         amt, qty = int(r['金額'] or 0), int(r['数量'] or 1)
         p = product(r['商品'])
         tanka, tax = p.get('単価'), p.get('税率', 10)
-        # 定期便＝日付が1日 かつ 定価×数量の90%ちょうど
-        teiki = r['日付'].endswith('/01') and tanka and amt == round(tanka * qty * 0.9)
+        teiki = is_teiki(r['日付'], first_day, tanka, qty, amt)
         items.append({'日付': r['日付'], '顧客': r['顧客'], 'スタッフ': r['スタッフ'],
                       '種別': '定期便' if teiki else '物販', '名称': r['商品'], '数量': qty,
                       '区分': '定期便' if teiki else '物販', '税率': tax, '税抜': amt, '備考': r.get('メモ', '')})
