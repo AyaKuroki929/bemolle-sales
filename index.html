@@ -92,6 +92,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <button data-t="unpaid">未収</button>
     <button data-t="bday">誕生日</button>
     <button data-t="allow">日当</button>
+    <button data-t="inhouse">社内施術</button>
     <button data-t="take">棚卸し</button>
     <button data-t="sum">税理士用</button>
     <button data-t="conf">設定</button>
@@ -157,6 +158,32 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   </div>
 </section>
 
+<!-- ══ 社内施術 ══ -->
+<section id="inhouse">
+  <div class="card">
+    <h2>うらかたさんに入れない施術を給料に入れる</h2>
+    <div class="mini" style="margin-bottom:8px">彩さんへの施術など、売上にはならないけれどスタッフの施術料には数える分をここに入れます。売上や税理士用には出ません</div>
+    <div class="row">
+      <div><label>日付</label><input type="date" id="i_date"></div>
+      <div><label>施術したスタッフ</label><select id="i_staff"></select></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div><label>施術内容</label><select id="i_kind"></select></div>
+      <div id="i_qty_wrap" style="display:none"><label>部位数</label><input type="text" inputmode="numeric" id="i_qty" value="1"></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div><label>受けた人</label><input id="i_receiver" value="黒木彩"></div>
+      <div><label>メモ（なくてもよい）</label><input id="i_memo" placeholder="例：上半身の練習"></div>
+    </div>
+    <button class="btn wide" id="btnSaveInhouse" style="margin-top:10px">登録する</button>
+  </div>
+  <div class="card">
+    <h2><span>登録した分</span><button class="btn ghost sm" id="btnReloadInhouse">更新</button></h2>
+    <div class="row"><div><select id="i_month"></select></div></div>
+    <div id="inhouseList" style="margin-top:10px"></div>
+  </div>
+</section>
+
 <!-- ══ 集計 ══ -->
 <section id="sum">
   <div class="card">
@@ -207,7 +234,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const BUILD = '20261025211038';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
+const BUILD = '20261126154528';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
 // GitHub Pages は10分間ブラウザに古い版を使わせるので、新しい版が出ていたら自分で読み直す（2026-10-02 彩さん「なってない」）
 async function checkBuild(){
   try{
@@ -306,6 +333,7 @@ $$('nav button').forEach(b => b.onclick = () => {
   $$('nav button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
   $$('section').forEach(s=>s.classList.remove('on')); $('#'+b.dataset.t).classList.add('on');
   if(b.dataset.t==='allow') loadAllowances();
+  if(b.dataset.t==='inhouse') loadInhouse();
   if(b.dataset.t==='unpaid') loadUnpaid();
   if(b.dataset.t==='bday') loadBirthdays();
   if(b.dataset.t==='take') loadStocktake();
@@ -729,6 +757,48 @@ function endEditAllowance(){
 $('#btnCancelEdit').onclick = () => { endEditAllowance(); $('#a_amount').value=''; $('#a_memo').value=''; };
 $('#a_month').onchange = loadAllowances;
 $('#p_month').onchange = loadPayQueue;
+// ─── 社内施術（うらかたさんに入れない施術を給料に入れる・2026-11-26 彩さん）───
+let INHOUSE_KINDS = [];
+function inhouseKindLabel(k){
+  const r = INHOUSE_KINDS.find(x=>x.kind===k);
+  return r ? `${k}（${yen(r.amount)}${r.perUnit?'／1部位':''}）` : k;
+}
+$('#i_kind').onchange = () => {
+  const r = INHOUSE_KINDS.find(x=>x.kind===$('#i_kind').value);
+  $('#i_qty_wrap').style.display = (r && r.perUnit) ? '' : 'none';
+};
+$('#btnSaveInhouse').onclick = () => busy($('#btnSaveInhouse'), '登録しています…', async () => {
+  const d = { date:$('#i_date').value, staff:$('#i_staff').value, kind:$('#i_kind').value,
+              qty: Number(String($('#i_qty').value).replace(/[^0-9]/g,''))||1,
+              receiver:$('#i_receiver').value.trim(), memo:$('#i_memo').value.trim() };
+  if(!d.date) return toast('日付を入れてください');
+  if(!d.kind) return toast('施術内容を選んでください');
+  try{ await api('saveInhouse', d); toast('登録しました');
+    $('#i_memo').value=''; $('#i_qty').value='1';
+    if($('#i_month').value !== d.date.slice(0,7)) fillMonths($('#i_month'), d.date.slice(0,7));
+    loadInhouse();
+  }catch(e){ toast(e.message); }
+});
+$('#btnReloadInhouse').onclick = () => busy($('#btnReloadInhouse'), '…', loadInhouse);
+$('#i_month').onchange = loadInhouse;
+async function loadInhouse(){
+  const month = $('#i_month').value;
+  $('#inhouseList').innerHTML = '<div class="mini">読み込み中…</div>';
+  try{
+    const rows = await api('getInhouse', {}, month?{month}:{});
+    if(!rows.length){ $('#inhouseList').innerHTML='<div class="mini">まだありません</div>'; return; }
+    $('#inhouseList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th>施術内容</th><th>受けた人</th><th></th></tr>`
+      + rows.map(r=>`<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.staff)}</td>
+        <td>${esc(r.kind)}${r.kind==='部位'?` ×${r.qty}`:''}${r.memo?`<div class="mini">${esc(r.memo)}</div>`:''}</td><td>${esc(r.receiver)}</td>
+        <td style="white-space:nowrap"><button class="del" onclick="removeInhouse('${r.id}')">削除</button></td></tr>`).join('')
+      + `</table><div class="mini" style="margin-top:6px">金額は税理士用タブの「お給料」に施術料として入ります（1日の上限件数も通常の施術と同じ）</div>`;
+  }catch(e){ $('#inhouseList').innerHTML=`<div class="ng">${esc(e.message)}</div>`; }
+}
+async function removeInhouse(id){
+  if(!confirm('削除しますか')) return;
+  try{ await api('deleteInhouse',{id}); toast('削除しました'); loadInhouse(); }
+  catch(e){ toast(e.message); }
+}
 // タイムカードにメモが入っている日（日当が自動で付かない日）を、登録済みかどうか付きで出す
 let MEMODAYS = [];
 async function loadMemoDays(month, rows, pre){
@@ -807,12 +877,17 @@ async function boot(silent){
     M = d.masters; PAY_METHODS = d.payMethods;
     const opt = n => `<option>${esc(n)}</option>`;
     $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
+    // 社内施術：施術するスタッフはインセンティブ対象の人を先に、施術内容は報酬規定の区分
+    const incFirst = M.staff.slice().sort((a,b)=>(b.incentive?1:0)-(a.incentive?1:0));
+    $('#i_staff').innerHTML = incFirst.map(s=>opt(s.name)).join('');
+    INHOUSE_KINDS = d.inhouseKinds || [];
+    $('#i_kind').innerHTML = INHOUSE_KINDS.map(k=>`<option value="${esc(k.kind)}">${esc(inhouseKindLabel(k.kind))}</option>`).join('');
     if(!silent){
       // URLに ?month=2026-08 が付いていればその月で開く（付いていなければ今月）
       const q = new URLSearchParams(location.search).get('month');
       const m = /^\d{4}-\d{2}$/.test(q || '') ? q : d.month;
-      fillMonths($('#p_month'), m); fillMonths($('#s_month'), m); fillMonths($('#a_month'), m); fillMonths($('#b_month'), m);
-      $('#a_date').value = d.today;
+      fillMonths($('#p_month'), m); fillMonths($('#s_month'), m); fillMonths($('#a_month'), m); fillMonths($('#b_month'), m); fillMonths($('#i_month'), m);
+      $('#a_date').value = d.today; $('#i_date').value = d.today;
     }
   }catch(e){ if(!silent) toast('接続できません：' + e.message, 5000); }
 }

@@ -21,6 +21,7 @@ const SH_MENUS    = 'メニューマスタ';
 const SH_STAFF    = 'スタッフ';
 const SH_SETTINGS = '設定';
 const SH_ALLOWANCE = '特別日当';
+const SH_INHOUSE  = '社内施術';   // うらかたさんに入れない施術（彩さんへの施術など）。売上ではなく施術インセンティブだけに効く（2026-11-26 彩さん）
 const SH_ARCHIVE  = 'アーカイブ';
 
 // ── 報酬規定（2025-04-03版・PDF準拠。変更時はここだけ直す）──────────
@@ -127,6 +128,9 @@ function handle(params, body) {
       case 'getAllowances':   result = getAllowances(params);      break;
       case 'getMemoDays':     result = getMemoDays(params);        break;
       case 'deleteAllowance': result = deleteAllowance(d);         break;
+      case 'saveInhouse':     result = saveInhouse(d);             break;
+      case 'getInhouse':      result = getInhouse(params);         break;
+      case 'deleteInhouse':   result = deleteInhouse(d);           break;
       case 'saveStock':       result = saveStock(d);               break;
       case 'saveStocks':      result = saveStocks(d);              break;
       case 'getStocks':       result = getStocks(params);          break;
@@ -193,6 +197,7 @@ function initSheets() {
     [SH_STAFF,    ['氏名','インセンティブ対象','表示順','有効']],
     [SH_SETTINGS, ['キー','値']],
     [SH_ALLOWANCE,['日当ID','日付','氏名','金額','理由','メモ','登録日時']],
+    [SH_INHOUSE,  ['施術ID','日付','担当者','受けた人','施術内容','数量','メモ','登録日時']],
     [SH_ARCHIVE,  ['削除日時','シート','内容']]
   ];
   defs.forEach(function (def) {
@@ -221,6 +226,10 @@ function getStartupData() {
     payMethods: PAY_METHODS,
     stockUses: STOCK_USES,
     allowanceReasons: ALLOWANCE_REASONS,
+    // 社内施術で選べる施術内容＝施術インセンティブの区分そのまま（単価も画面に出す）
+    inhouseKinds: Object.keys(TREAT_RULES).map(function (k) {
+      return { kind: k, amount: TREAT_RULES[k].amount, perUnit: k === '部位' };
+    }),
     today: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'),
     month: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM')
   };
@@ -615,6 +624,55 @@ function deleteAllowance(d) {
   });
 }
 
+// ─── 社内施術（うらかたさんに入れない施術を給料に入れる）────────────
+// 彩さんが受けた施術など、売上にはならないがスタッフの施術インセンティブには数える分。
+// 売上・税理士用CSV・支払入力には一切出ない。getIncentive の中で施術行として合流する（2026-11-26 彩さん）
+function saveInhouse(d) {
+  return withLock_(function () {
+    const date = ymd_(d.date);
+    if (!date) throw new Error('日付を入れてください');
+    if (!d.staff) throw new Error('スタッフを選んでください');
+    if (!TREAT_RULES[d.kind]) throw new Error('施術内容を選んでください');
+    const qty = Math.max(1, Number(d.qty || 1));
+    const s = sh(SH_INHOUSE);
+    if (s.getLastRow() === 0) {
+      s.appendRow(['施術ID','日付','担当者','受けた人','施術内容','数量','メモ','登録日時']);
+      s.setFrozenRows(1);
+    }
+    const id = newId_('H');
+    s.appendRow([id, date, d.staff, (d.receiver || '').trim() || '黒木彩', d.kind, qty, d.memo || '', nowStr_()]);
+    return { created: true, id: id };
+  });
+}
+
+function getInhouse(params) {
+  const month = (params && params.month) || '';
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName(SH_INHOUSE)) return [];
+  return readSheet_(SH_INHOUSE).filter(function (r) {
+    const dt = ymd_(r['日付']);
+    return dt && (month ? dt.slice(0, 7) === month : true);
+  }).map(function (r) {
+    return { id: r['施術ID'], date: ymd_(r['日付']), staff: r['担当者'], receiver: r['受けた人'] || '黒木彩',
+             kind: r['施術内容'], qty: Number(r['数量']) || 1, memo: r['メモ'] || '' };
+  }).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+}
+
+function deleteInhouse(d) {
+  return withLock_(function () {
+    const s = sh(SH_INHOUSE);
+    const vals = s.getLastRow() > 1 ? s.getRange(2, 1, s.getLastRow() - 1, s.getLastColumn()).getValues() : [];
+    for (let i = 0; i < vals.length; i++) {
+      if (String(vals[i][0]) === String(d.id)) {
+        sh(SH_ARCHIVE).appendRow([nowStr_(), SH_INHOUSE, JSON.stringify(vals[i])]);
+        s.deleteRow(i + 2);
+        return { deleted: true };
+      }
+    }
+    throw new Error('見つかりません');
+  });
+}
+
 // ─── 在庫払出（売上でない持ち出し）──────────────────────
 function saveStock(d) {
   return withLock_(function () {
@@ -784,6 +842,15 @@ function getIncentive(month) {
   all.sales.forEach(function (s) { saleById[String(s['会計ID'])] = s; });
 
   const items = all.items.filter(function (r) { return inMonth(r['日付']); });
+  // 社内施術（うらかたさんに入れない施術）を、売上0円の施術行として同じ土俵に乗せる。
+  // 1日の上限件数・折半の計算も通常の施術と同じ扱いになる（2026-11-26 彩さん「給料には反映させたい」）
+  getInhouse({ month: month }).forEach(function (h) {
+    const fakeId = '社内|' + h.id;
+    saleById[fakeId] = { '会計ID': fakeId, '顧客名': h.receiver, 'アポインター': '' };
+    items.push({ '会計ID': fakeId, '日付': h.date, '種別': '施術', '名称': h.kind + '（社内）',
+                 '数量': h.qty, '区分': h.kind, '税率': 0, '税抜金額': 0, '税込金額': 0,
+                 '担当者': h.staff, '備考': h.memo || '' });
+  });
   const targets = getMasters().staff.filter(function (s) { return s.incentive; })
                     .map(function (s) { return s.name; });
 
