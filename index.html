@@ -171,9 +171,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
       <div><label>施術内容</label><select id="i_kind"></select></div>
       <div id="i_qty_wrap" style="display:none"><label>部位数</label><input type="text" inputmode="numeric" id="i_qty" value="1"></div>
     </div>
-    <div class="row" style="margin-top:8px">
-      <div><label>受けた人</label><input id="i_receiver" value="黒木彩"></div>
-    </div>
     <button class="btn wide" id="btnSaveInhouse" style="margin-top:10px">登録する</button>
   </div>
   <div class="card">
@@ -233,7 +230,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const BUILD = '20261126155310';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
+const BUILD = '20261126155650';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
 // GitHub Pages は10分間ブラウザに古い版を使わせるので、新しい版が出ていたら自分で読み直す（2026-10-02 彩さん「なってない」）
 async function checkBuild(){
   try{
@@ -769,7 +766,7 @@ $('#i_kind').onchange = () => {
 $('#btnSaveInhouse').onclick = () => busy($('#btnSaveInhouse'), '登録しています…', async () => {
   const d = { date:$('#i_date').value, staff:$('#i_staff').value, kind:$('#i_kind').value,
               qty: Number(String($('#i_qty').value).replace(/[^0-9]/g,''))||1,
-              receiver:$('#i_receiver').value.trim(), memo:'' };
+              receiver:'黒木彩', memo:'' };   // 受けた人は毎回彩さん（2026-11-26 彩さん「受けた人は毎回私なので不要」）
   if(!d.date) return toast('日付を入れてください');
   if(!d.kind) return toast('施術内容を選んでください');
   try{ await api('saveInhouse', d); toast('登録しました');
@@ -786,9 +783,9 @@ async function loadInhouse(){
   try{
     const rows = await api('getInhouse', {}, month?{month}:{});
     if(!rows.length){ $('#inhouseList').innerHTML='<div class="mini">まだありません</div>'; return; }
-    $('#inhouseList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th>施術内容</th><th>受けた人</th><th></th></tr>`
+    $('#inhouseList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th>施術内容</th><th></th></tr>`
       + rows.map(r=>`<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.staff)}</td>
-        <td>${esc(r.kind)}${r.kind==='部位'?` ×${r.qty}`:''}</td><td>${esc(r.receiver)}</td>
+        <td>${esc(r.kind)}${r.kind==='部位'?` ×${r.qty}`:''}</td>
         <td style="white-space:nowrap"><button class="del" onclick="removeInhouse('${r.id}')">削除</button></td></tr>`).join('')
       + `</table><div class="mini" style="margin-top:6px">金額は税理士用タブの「お給料」に施術料として入ります（1日の上限件数も通常の施術と同じ）</div>`;
   }catch(e){ $('#inhouseList').innerHTML=`<div class="ng">${esc(e.message)}</div>`; }
