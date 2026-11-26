@@ -92,7 +92,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <button data-t="unpaid">未収</button>
     <button data-t="bday">誕生日</button>
     <button data-t="allow">日当</button>
-    <button data-t="inhouse">社内施術</button>
+    <button data-t="inhouse">黒木施術</button>
     <button data-t="take">棚卸し</button>
     <button data-t="sum">税理士用</button>
     <button data-t="conf">設定</button>
@@ -158,11 +158,11 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   </div>
 </section>
 
-<!-- ══ 社内施術 ══ -->
+<!-- ══ 黒木施術 ══ -->
 <section id="inhouse">
   <div class="card">
     <h2>うらかたさんに入れない施術を給料に入れる</h2>
-    <div class="mini" style="margin-bottom:8px">彩さんへの施術など、売上にはならないけれどスタッフの施術料には数える分をここに入れます。売上や税理士用には出ません</div>
+    <div class="mini" style="margin-bottom:8px">黒木への施術は売上にはなりませんが、スタッフの施術料には数えます。売上や税理士用には出ません</div>
     <div class="row">
       <div><label>日付</label><input type="date" id="i_date"></div>
       <div><label>施術したスタッフ</label><select id="i_staff"></select></div>
@@ -173,7 +173,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     </div>
     <div class="row" style="margin-top:8px">
       <div><label>受けた人</label><input id="i_receiver" value="黒木彩"></div>
-      <div><label>メモ（なくてもよい）</label><input id="i_memo" placeholder="例：上半身の練習"></div>
     </div>
     <button class="btn wide" id="btnSaveInhouse" style="margin-top:10px">登録する</button>
   </div>
@@ -234,7 +233,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 <script>
 // ★デプロイ後にGASウェブアプリのURLを貼る
-const BUILD = '20261126154528';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
+const BUILD = '20261126155310';   // commit時に hooks/pre-commit が日時に書き換える（build.txt と同じ値）
 // GitHub Pages は10分間ブラウザに古い版を使わせるので、新しい版が出ていたら自分で読み直す（2026-10-02 彩さん「なってない」）
 async function checkBuild(){
   try{
@@ -757,7 +756,7 @@ function endEditAllowance(){
 $('#btnCancelEdit').onclick = () => { endEditAllowance(); $('#a_amount').value=''; $('#a_memo').value=''; };
 $('#a_month').onchange = loadAllowances;
 $('#p_month').onchange = loadPayQueue;
-// ─── 社内施術（うらかたさんに入れない施術を給料に入れる・2026-11-26 彩さん）───
+// ─── 黒木施術（うらかたさんに入れない施術を給料に入れる・2026-11-26 彩さん）───
 let INHOUSE_KINDS = [];
 function inhouseKindLabel(k){
   const r = INHOUSE_KINDS.find(x=>x.kind===k);
@@ -770,11 +769,11 @@ $('#i_kind').onchange = () => {
 $('#btnSaveInhouse').onclick = () => busy($('#btnSaveInhouse'), '登録しています…', async () => {
   const d = { date:$('#i_date').value, staff:$('#i_staff').value, kind:$('#i_kind').value,
               qty: Number(String($('#i_qty').value).replace(/[^0-9]/g,''))||1,
-              receiver:$('#i_receiver').value.trim(), memo:$('#i_memo').value.trim() };
+              receiver:$('#i_receiver').value.trim(), memo:'' };
   if(!d.date) return toast('日付を入れてください');
   if(!d.kind) return toast('施術内容を選んでください');
   try{ await api('saveInhouse', d); toast('登録しました');
-    $('#i_memo').value=''; $('#i_qty').value='1';
+    $('#i_qty').value='1';
     if($('#i_month').value !== d.date.slice(0,7)) fillMonths($('#i_month'), d.date.slice(0,7));
     loadInhouse();
   }catch(e){ toast(e.message); }
@@ -789,7 +788,7 @@ async function loadInhouse(){
     if(!rows.length){ $('#inhouseList').innerHTML='<div class="mini">まだありません</div>'; return; }
     $('#inhouseList').innerHTML = `<table><tr><th>日付</th><th>スタッフ</th><th>施術内容</th><th>受けた人</th><th></th></tr>`
       + rows.map(r=>`<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.staff)}</td>
-        <td>${esc(r.kind)}${r.kind==='部位'?` ×${r.qty}`:''}${r.memo?`<div class="mini">${esc(r.memo)}</div>`:''}</td><td>${esc(r.receiver)}</td>
+        <td>${esc(r.kind)}${r.kind==='部位'?` ×${r.qty}`:''}</td><td>${esc(r.receiver)}</td>
         <td style="white-space:nowrap"><button class="del" onclick="removeInhouse('${r.id}')">削除</button></td></tr>`).join('')
       + `</table><div class="mini" style="margin-top:6px">金額は税理士用タブの「お給料」に施術料として入ります（1日の上限件数も通常の施術と同じ）</div>`;
   }catch(e){ $('#inhouseList').innerHTML=`<div class="ng">${esc(e.message)}</div>`; }
@@ -877,9 +876,9 @@ async function boot(silent){
     M = d.masters; PAY_METHODS = d.payMethods;
     const opt = n => `<option>${esc(n)}</option>`;
     $('#a_staff').innerHTML = M.staff.map(s=>opt(s.name)).join('');
-    // 社内施術：施術するスタッフはインセンティブ対象の人を先に、施術内容は報酬規定の区分
-    const incFirst = M.staff.slice().sort((a,b)=>(b.incentive?1:0)-(a.incentive?1:0));
-    $('#i_staff').innerHTML = incFirst.map(s=>opt(s.name)).join('');
+    // 黒木施術：施術するスタッフはインセンティブ対象の人だけ（黒木彩は出さない・2026-11-26 彩さん）
+    const incOnly = M.staff.filter(s=>s.incentive && s.name!=='黒木彩');
+    $('#i_staff').innerHTML = (incOnly.length?incOnly:M.staff.filter(s=>s.name!=='黒木彩')).map(s=>opt(s.name)).join('');
     INHOUSE_KINDS = d.inhouseKinds || [];
     $('#i_kind').innerHTML = INHOUSE_KINDS.map(k=>`<option value="${esc(k.kind)}">${esc(inhouseKindLabel(k.kind))}</option>`).join('');
     if(!silent){

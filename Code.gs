@@ -21,7 +21,7 @@ const SH_MENUS    = 'メニューマスタ';
 const SH_STAFF    = 'スタッフ';
 const SH_SETTINGS = '設定';
 const SH_ALLOWANCE = '特別日当';
-const SH_INHOUSE  = '社内施術';   // うらかたさんに入れない施術（彩さんへの施術など）。売上ではなく施術インセンティブだけに効く（2026-11-26 彩さん）
+const SH_INHOUSE  = '黒木施術';   // うらかたさんに入れない施術（彩さんへの施術）。売上ではなく施術インセンティブだけに効く（2026-11-26 彩さん。名前は「黒木施術」）
 const SH_ARCHIVE  = 'アーカイブ';
 
 // ── 報酬規定（2025-04-03版・PDF準拠。変更時はここだけ直す）──────────
@@ -226,8 +226,8 @@ function getStartupData() {
     payMethods: PAY_METHODS,
     stockUses: STOCK_USES,
     allowanceReasons: ALLOWANCE_REASONS,
-    // 社内施術で選べる施術内容＝施術インセンティブの区分そのまま（単価も画面に出す）
-    inhouseKinds: Object.keys(TREAT_RULES).map(function (k) {
+    // 黒木施術で選べる施術内容＝施術インセンティブの区分（セルマンは出さない・2026-11-26 彩さん）
+    inhouseKinds: Object.keys(TREAT_RULES).filter(function (k) { return k !== 'セルマン'; }).map(function (k) {
       return { kind: k, amount: TREAT_RULES[k].amount, perUnit: k === '部位' };
     }),
     today: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'),
@@ -624,7 +624,7 @@ function deleteAllowance(d) {
   });
 }
 
-// ─── 社内施術（うらかたさんに入れない施術を給料に入れる）────────────
+// ─── 黒木施術（うらかたさんに入れない施術を給料に入れる）────────────
 // 彩さんが受けた施術など、売上にはならないがスタッフの施術インセンティブには数える分。
 // 売上・税理士用CSV・支払入力には一切出ない。getIncentive の中で施術行として合流する（2026-11-26 彩さん）
 function saveInhouse(d) {
@@ -842,12 +842,12 @@ function getIncentive(month) {
   all.sales.forEach(function (s) { saleById[String(s['会計ID'])] = s; });
 
   const items = all.items.filter(function (r) { return inMonth(r['日付']); });
-  // 社内施術（うらかたさんに入れない施術）を、売上0円の施術行として同じ土俵に乗せる。
+  // 黒木施術（うらかたさんに入れない施術）を、売上0円の施術行として同じ土俵に乗せる。
   // 1日の上限件数・折半の計算も通常の施術と同じ扱いになる（2026-11-26 彩さん「給料には反映させたい」）
   getInhouse({ month: month }).forEach(function (h) {
-    const fakeId = '社内|' + h.id;
+    const fakeId = '黒木|' + h.id;
     saleById[fakeId] = { '会計ID': fakeId, '顧客名': h.receiver, 'アポインター': '' };
-    items.push({ '会計ID': fakeId, '日付': h.date, '種別': '施術', '名称': h.kind + '（社内）',
+    items.push({ '会計ID': fakeId, '日付': h.date, '種別': '施術', '名称': h.kind + '（黒木）',
                  '数量': h.qty, '区分': h.kind, '税率': 0, '税抜金額': 0, '税込金額': 0,
                  '担当者': h.staff, '備考': h.memo || '' });
   });
